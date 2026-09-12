@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"starling/internal/model"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -203,16 +204,16 @@ func TestDiscoverySubscription(t *testing.T) {
 	}
 }
 func TestDiscoverySubscriptionTimeout(t *testing.T) {
-	n := 0
+	var n atomic.Int32
 	c := fixtureClient(t, func(w http.ResponseWriter, r *http.Request) {
-		n++
+		n.Add(1)
 		time.Sleep(50 * time.Millisecond)
 		fmt.Fprint(w, `{}`)
 	})
 	c.http.Timeout = 10 * time.Millisecond
 	_, e := c.Subscribe(context.Background(), "token", discoveryPID)
-	if !model.IsCode(e, "SUBSCRIPTION_UNCERTAIN") || n != 1 {
-		t.Fatal(e, n)
+	if !model.IsCode(e, "SUBSCRIPTION_UNCERTAIN") || n.Load() != 1 {
+		t.Fatal(e, n.Load())
 	}
 }
 func TestDiscoveryRejectsInputsBeforeNetwork(t *testing.T) {

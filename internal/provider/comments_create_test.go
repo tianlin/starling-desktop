@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"starling/internal/model"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -67,9 +68,9 @@ func TestCreateCommentNoRetryAndSafeFailures(t *testing.T) {
 		})
 	}
 	t.Run("network", func(t *testing.T) {
-		calls := 0
+		var calls atomic.Int32
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			calls++
+			calls.Add(1)
 			conn, _, e := w.(http.Hijacker).Hijack()
 			if e != nil {
 				t.Error(e)
@@ -80,8 +81,8 @@ func TestCreateCommentNoRetryAndSafeFailures(t *testing.T) {
 		defer s.Close()
 		c := newClient(s.Client(), s.URL, s.URL, s.URL)
 		_, e := c.CreateComment(context.Background(), "test-token", commentEpisode, "private-draft")
-		if !model.IsCode(e, "COMMENT_UNCERTAIN") || calls != 1 {
-			t.Fatalf("error=%v calls=%d", e, calls)
+		if !model.IsCode(e, "COMMENT_UNCERTAIN") || calls.Load() != 1 {
+			t.Fatalf("error=%v calls=%d", e, calls.Load())
 		}
 	})
 }
