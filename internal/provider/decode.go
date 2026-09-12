@@ -98,7 +98,20 @@ func decodeItem(raw json.RawMessage, kind string) (model.Item, error) {
 		it.Restriction = "暂不支持付费、私密或下架内容，请在官方客户端确认权限。"
 	}
 	media := object(m, "media")
-	it.MediaURL = first(text(object(m, "enclosure"), "url"), text(object(media, "source"), "url"), text(media, "url"))
+	sources := []string{text(object(m, "enclosure"), "url"), text(object(media, "source"), "url"), text(media, "url")}
+	// RSS enclosures may use an external host even when the official response
+	// includes a playable copy on its own CDN. Keep the URL boundary intact and
+	// consider only explicitly public backups supplied by that same response.
+	it.MediaURL = first(sources...)
+	if backup := object(media, "backupSource"); text(backup, "mode") == "PUBLIC" {
+		sources = append(sources, text(backup, "url"))
+	}
+	for _, source := range sources {
+		if security.ValidateMediaURL(source) == nil {
+			it.MediaURL = source
+			break
+		}
+	}
 	if kind == "episode" && it.MediaURL == "" && boolean(m, "isPlayable") == false {
 		if v, exists := m["isPlayable"]; exists && v == false {
 			it.Restricted = true

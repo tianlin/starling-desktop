@@ -8,7 +8,9 @@ export class Player {
     private progressError = '';
     get error() { return this.mediaError || this.progressError; }
     get notice() {
-        if (!this.resolved)
+        // Empty seek ranges are normal while loading metadata or restoring a
+        // checkpoint. Wait for HAVE_FUTURE_DATA before reporting a limitation.
+        if (!this.resolved || this.audio.readyState < 3 || this.audio.seeking)
             return '';
         if (this.seekOnLoad > 0)
             return '尚未恢复到上次位置：当前音频暂时无法定位，原进度会保留。';

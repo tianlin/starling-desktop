@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {Player} from '../dist/player.js';
 class AudioMock extends EventTarget {
-  paused=true;currentTime=0;duration=120;volume=1;playbackRate=1;src='';
+  paused=true;currentTime=0;duration=120;volume=1;playbackRate=1;src='';readyState=4;seeking=false;
   seekable={length:1,start:()=>0,end:()=>120};error=null;
   load(){this.dispatchEvent(new Event('loadedmetadata'));}
   async play(){this.paused=false;this.dispatchEvent(new Event('playing'));}
@@ -10,6 +10,26 @@ class AudioMock extends EventTarget {
   removeAttribute(name){if(name==='src')this.src='';}
 }
 const item=id=>({kind:'episode',id,title:id,sourceUrl:'https://www.xiaoyuzhoufm.com/episode/'+id,restricted:false});
+test('normal loading and restoring a checkpoint never flash a seek warning before media is ready',async()=>{
+ for(const position of [0,42]) {
+  const audio=new AudioMock(),messages=[];
+  audio.readyState=0;audio.seekable={length:0,start:()=>0,end:()=>120};
+  audio.load=()=>{};
+  let finishPlay;
+  audio.play=()=>new Promise(resolve=>{finishPlay=resolve;});
+  const p=new Player(audio,async action=>action==='playback.resolve'?{item:item('a'),url:'https://media.xyzcdn.net/a.wav',position,epoch:1}:null,()=>1,()=>messages.push(p.error||p.notice));
+  const pending=p.play(item('a'));await new Promise(setImmediate);
+  audio.readyState=1;audio.dispatchEvent(new Event('loadedmetadata'));
+  audio.dispatchEvent(new Event('progress'));
+  assert.equal(p.state,'buffering');assert.equal(p.seekable,false);
+  assert.ok(messages.every(message=>message===''),'ordinary initial loading must not display a warning');
+  audio.seekable={length:1,start:()=>0,end:()=>120};audio.readyState=3;audio.dispatchEvent(new Event('canplay'));
+  audio.paused=false;audio.dispatchEvent(new Event('playing'));finishPlay();await pending;
+  assert.equal(audio.currentTime,position);assert.equal(p.notice,'');
+  assert.ok(messages.every(message=>message===''));
+  await p.dispose();
+ }
+});
 function fixture(resolver,{save=()=>null,epoch=()=>1}={}){
  const audio=new AudioMock(),calls=[];
  const api=async(action,p)=>{calls.push({action,p}); if(action==='playback.resolve')return resolver(p);if(action==='progress.save')return save(p);return null;};
