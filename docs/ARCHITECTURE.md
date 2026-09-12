@@ -39,3 +39,7 @@ Win32 辅助窗口接收托盘、热键和电源消息，能力失败反馈到�
 ## 内容和存储安全
 
 Wails 资源带 CSP；说明经惰性模板解析后重构允许的文本节点，不复制原属性或执行原 HTML。API、媒体、图片及外部链接各自校验 URL；外链经宿主验证才交给默认浏览器。SQLite 使用绑定参数。WebView 使用独立临时运行目录，退出及下次启动尽力清理；不承诺即时或取证级擦除。完整边界见 [SECURITY.md](../SECURITY.md) 和 [PRIVACY.md](../PRIVACY.md)。
+
+## macOS 平台层
+
+公共宿主保留唯一 Call 桥，平台文件分别配置 Windows WebView2 与 macOS WKWebView。macOS 关闭按钮隐藏应用，退出事件走公共 QuitGate 保存握手；Cocoa 菜单栏与睡眠观察者在主线程注册和释放。数据库使用 Linux/macOS 共用 CGo SQLite 实现。Vault 工厂返回接口：Windows 为 DPAPI FileVault，macOS 为系统钥匙串项；通用测试验证保存轮换、故障和隔离。desktop.info 的 platform 字段用于平台文案，SessionView 的 storageWarning 字段用于显式报告临时会话降级。

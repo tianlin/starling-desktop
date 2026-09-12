@@ -26,23 +26,24 @@ type refreshFlight struct {
 	retryAt time.Time
 }
 type Manager struct {
-	mu           sync.Mutex
-	p            provider.Provider
-	vault        security.Vault
-	epoch        uint64
-	state        string
-	identity     model.Identity
-	credentials  model.Credentials
-	persistent   bool
-	ctx          context.Context
-	cancel       context.CancelFunc
-	flight       *refreshFlight
-	jobs         sync.WaitGroup
-	closed       bool
-	qrID         string
-	qrUntil      time.Time
-	qrBusy       bool
-	smsBaseEpoch uint64
+	mu             sync.Mutex
+	p              provider.Provider
+	vault          security.Vault
+	epoch          uint64
+	state          string
+	identity       model.Identity
+	credentials    model.Credentials
+	persistent     bool
+	storageWarning string
+	ctx            context.Context
+	cancel         context.CancelFunc
+	flight         *refreshFlight
+	jobs           sync.WaitGroup
+	closed         bool
+	qrID           string
+	qrUntil        time.Time
+	qrBusy         bool
+	smsBaseEpoch   uint64
 }
 
 func New(p provider.Provider, v security.Vault) *Manager {
@@ -52,7 +53,7 @@ func New(p provider.Provider, v security.Vault) *Manager {
 func (m *Manager) View() model.SessionView {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	v := model.SessionView{Epoch: m.epoch, State: m.state, Persistent: m.persistent, StorageAvailable: m.vault.Available()}
+	v := model.SessionView{Epoch: m.epoch, State: m.state, Persistent: m.persistent, StorageAvailable: m.vault.Available(), StorageWarning: m.storageWarning}
 	if m.identity.ID != "" {
 		id := m.identity
 		v.Identity = &id
@@ -183,8 +184,17 @@ func (m *Manager) establish(epoch uint64, ctx context.Context, c model.Credentia
 		return model.Err("BAD_RESPONSE", "登录凭据或身份不完整。")
 	}
 	var e error
+	m.storageWarning = ""
 	if persistent {
 		e = m.vault.Save(model.SavedSession{Credentials: c, Identity: id})
+		if e != nil {
+			m.storageWarning = "会话保存失败，当前仅本次连接有效。" + model.PublicError(e).Message
+			persistent = false
+			if cleanup := m.vault.Clear(); cleanup != nil {
+				m.storageWarning += " 旧的保存项也未能清除，请在系统凭据管理中检查。"
+			}
+			e = nil
+		}
 	} else {
 		e = m.vault.Clear()
 	}
@@ -333,7 +343,12 @@ func (m *Manager) performRefresh(s Snapshot, f *refreshFlight) {
 	if e == nil && m.persistent {
 		e = m.vault.Save(model.SavedSession{Credentials: next, Identity: m.identity})
 		if e != nil {
-			m.state = "needs_login"
+			m.persistent = false
+			m.storageWarning = "续期成功，但新会话保存失败，当前仅本次连接有效。" + model.PublicError(e).Message
+			if cleanup := m.vault.Clear(); cleanup != nil {
+				m.storageWarning += " 旧的保存项也未能清除，请在系统凭据管理中检查。"
+			}
+			e = nil
 		}
 	}
 	if e == nil {
@@ -385,6 +400,7 @@ func (m *Manager) LogoutAt(epoch uint64, cleanup func(string) error) error {
 	m.credentials = model.Credentials{}
 	m.identity = model.Identity{}
 	m.persistent = false
+	m.storageWarning = ""
 	m.state = "guest"
 	m.flight = nil
 	m.ctx, m.cancel = context.WithCancel(context.Background())

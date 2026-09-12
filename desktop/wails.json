@@ -7,5 +7,5 @@
  "frontend:build": "npm run build",
  "frontend:dev:watcher": "",
  "author": {"name": "Starling contributors", "email": ""},
- "info": {"companyName": "Starling contributors", "productName": "Starling", "productVersion": "0.2.0", "copyright": "Copyright Starling contributors", "comments": "Unofficial podcast desktop client"}
+ "info": {"companyName": "Starling contributors", "productName": "Starling", "productVersion": "0.3.0", "copyright": "Copyright Starling contributors", "comments": "Unofficial podcast desktop client"}
 }

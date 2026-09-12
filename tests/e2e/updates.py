@@ -117,7 +117,9 @@ try:
         page.route('**/api', unknown)
         page.get_by_role('button', name='刷新', exact=True).click()
         expect(page.get_by_text('尚未取得更新', exact=True)).to_be_visible()
-        expect(page.locator('.updates-view .inline-warning')).to_contain_text('无法确认')
+        # The UI intentionally removed technical pagination notices in 405d9ce.
+        # Unknown-end remains distinct from a confirmed empty collection below.
+        expect(page.locator('.updates-view .inline-warning')).to_have_count(0)
         expect(page.get_by_text('暂无订阅更新', exact=True)).to_have_count(0)
         page.unroute('**/api', unknown)
         empty = fixture_state('complete', True)

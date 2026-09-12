@@ -5,6 +5,7 @@ import "sync"
 
 type Hooks struct{ Show, Toggle, Quit, Pause func() }
 type Info struct {
+	Platform string `json:"platform"`
 	Tray     bool   `json:"tray"`
 	MediaKey bool   `json:"mediaKey"`
 	Demo     bool   `json:"demo"`

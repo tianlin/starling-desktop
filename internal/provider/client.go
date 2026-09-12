@@ -21,7 +21,7 @@ import (
 )
 
 const AdapterVersion = "xyz-discovery-2026-09-12.1"
-const userAgent = "Starling/0.2.0 (unofficial desktop podcast client)"
+const userAgent = "Starling/0.3.0 (unofficial desktop podcast client)"
 
 type Client struct {
 	http           *http.Client

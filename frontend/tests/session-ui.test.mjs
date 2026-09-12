@@ -2,6 +2,43 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Application } from '../dist/shell.js';
 
+test('saved-session failure is visible once while temporary session remains connected', async () => {
+    const data={session:{epoch:3,state:'connected',persistent:false,storageWarning:'保存失败，仅本次连接有效'}};
+    globalThis.window={go:{main:{App:{Call:async()=>JSON.stringify({ok:true,data})}}}};
+    const notices=[];
+    const app=Object.assign(Object.create(Application.prototype),{
+        reloadGeneration:0, player:{observeGeneration(){}}, applySettings(){}, drawAccount(){}, notice(s){notices.push(s);},
+    });
+    try {
+        await app.reload(); await app.reload();
+        assert.deepEqual(notices,[data.session.storageWarning]);
+        assert.equal(app.boot.session.state,'connected');
+        assert.equal(app.boot.session.persistent,false);
+    } finally { delete globalThis.window; }
+});
+
+test('failed final persistence never acknowledges successful quit', async () => {
+    const callbacks=new Map(), calls=[], errors=[];
+    const oldNavigator=Object.getOwnPropertyDescriptor(globalThis,'navigator');
+    Object.defineProperty(globalThis,'navigator',{value:{},configurable:true});
+    globalThis.window={runtime:{EventsOn:(name,fn)=>callbacks.set(name,fn)},go:{main:{App:{Call:async action=>{calls.push(action);return JSON.stringify({ok:true});}}}}};
+    const app=Object.assign(Object.create(Application.prototype),{
+        player:{pause(){},persist:async()=>{throw Error('synthetic disk failure');}},notice:e=>errors.push(e.message),
+    });
+    try {
+        app.nativeEvents(); callbacks.get('desktop:before-quit')();
+        await new Promise(resolve=>setImmediate(resolve));
+        assert.deepEqual(calls,[]); assert.deepEqual(errors,['synthetic disk failure']);
+        app.player.persist=async()=>{};
+        callbacks.get('desktop:before-quit')();
+        await new Promise(resolve=>setImmediate(resolve));
+        assert.deepEqual(calls,['desktop.quitReady']);
+    } finally {
+        delete globalThis.window;
+        if(oldNavigator) Object.defineProperty(globalThis,'navigator',oldNavigator); else delete globalThis.navigator;
+    }
+});
+
 test('late bootstrap cannot replace a newer account or redraw stale state', async () => {
     const pending = [];
     globalThis.window = { go: { main: { App: { Call: () => new Promise(resolve => pending.push(resolve)) } } } };

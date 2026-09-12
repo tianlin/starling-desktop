@@ -1,8 +1,8 @@
 # Starling · 星听
 
-面向 **Windows 11 x64** 的非官方小宇宙桌面客户端，当前版本 **0.2.0**。支持个人库、订阅更新、探索、评论与本机连续收听，提供便携程序和当前用户安装脚本。
+面向 **Windows 11 x64 与 macOS 14+（Apple Silicon / Intel）** 的非官方小宇宙桌面客户端，当前版本 **0.3.0**。macOS 为待实机验收的候选支持，提供双架构 DMG。支持个人库、订阅更新、探索、评论与本机连续收听，提供便携程序和当前用户安装脚本。
 
-独立界面采用 Go + Wails 2 + TypeScript + SQLite，没有项目方账号服务器。原创代码采用 MIT；平台内容与商标不在该许可证授权范围内。本版本未签名，未经过外部安全审计；验证证据和实机边界分别见 [测试报告](docs/TEST_REPORT.md) 和 [后续验证](docs/REMAINING_WORK.md)。
+独立界面采用 Go + Wails 2 + TypeScript + SQLite，没有项目方账号服务器。原创代码采用 MIT；平台内容与商标不在该许可证授权范围内。Windows 构建未签名，macOS 候选仅使用 ad-hoc 签名且未公证，未经过外部安全审计；验证证据和实机边界分别见 [测试报告](docs/TEST_REPORT.md) 和 [后续验证](docs/REMAINING_WORK.md)。
 
 ![收藏列表：明确标记的合成测试环境](docs/screenshots/favorites.png)
 
@@ -19,13 +19,19 @@
 | 播放与本地状态 | 播放暂停、拖动、后退 15 秒 / 前进 30 秒、倍速、音量、书签、队列、断点续播；重启不自动播放 |
 | Windows 集成 | 托盘、媒体键、睡眠暂停、单实例、用户级 DPAPI 和系统 SQLite；不同设备及 WebView2 的验证边界见测试报告 |
 
+| macOS 集成 | 菜单栏、隐藏窗口继续播放、Dock 恢复、睡眠暂停、单实例、系统钥匙串与 SQLite；全局媒体键暂不提供 |
+
 ## 开始使用
 
-运行 `build/Starling.exe`，或按下方步骤安装。公开链接和本地书签可在访客模式使用；个人库、探索和评论需要在设置中启用“账号接入”，再使用小宇宙 App 扫描二维码。凭据仅在本机处理，保存会话是可选项。
+Windows 运行 `build/Starling.exe`，或按下方步骤安装。macOS 下载对应芯片的 DMG 并拖入 Applications，详见 [macOS 安装与验收](docs/MACOS.md)。公开链接和本地书签可在访客模式使用；个人库、探索和评论需要在设置中启用“账号接入”，再使用小宇宙 App 扫描二维码。凭据仅在本机处理，保存会话是可选项。
 
 扫码采用官方网页现有流程，并重新核对听众身份，详见 [扫码说明](docs/QR_LOGIN.md)。这不是平台提供给本项目的 OAuth 授权；私有接口可能变化、拒绝访问或触发风控。短信路径缺少当前网页所需的人机验证参数，可能无法发送。客户端不伪造移动设备指纹，不绕过验证码、付费限制或访问控制，也不读取其他应用会话。
 
 发表评论、回复和订阅须由用户主动操作。请求结果不确定时，先刷新或在官方客户端核对，再决定是否重试；自动测试没有执行真实评论或订阅写入。
+
+## macOS 构建
+
+在 macOS 14+ 上安装 Go 1.26.8、Xcode Command Line Tools、Node.js/npm 和 Python 3，然后执行 `bash scripts/build-macos.sh`。CI 分别构建 arm64 / amd64，产物和对应证据位于 `build/macos-<架构>/`；签名完整性检查不等同于 Apple 公证。完整说明见 [macOS 文档](docs/MACOS.md)。
 
 ## Windows 构建
 
@@ -40,7 +46,7 @@ powershell -NoProfile -File .\scripts\build-windows.ps1
 需要保留当前程序运行时，使用独立候选构建：
 
 ```powershell
-powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate -CandidateName Starling-candidate-020
+powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate -CandidateName Starling-candidate-030
 ```
 
 候选构建跳过绑定生成，输出独立 EXE 和哈希，不启动或替换现有程序，并拒绝覆盖运行中的同名目标。修改宿主绑定签名后需补做常规构建。
@@ -62,7 +68,7 @@ go run github.com/wailsapp/wails/v2/cmd/wails@v2.11.0 build -platform windows/am
 
 手工构建输出位于 `desktop/build/bin/`。依赖校验入口为 `scripts/verify-dependencies.ps1`；测试及发布物检查见 [测试报告](docs/TEST_REPORT.md)。
 
-## 安装与卸载
+## Windows 安装与卸载
 
 ```powershell
 powershell -NoProfile -File .\scripts\install.ps1
@@ -90,7 +96,7 @@ go run ./cmd/demo
 | `internal/app/` | 业务编排与受限 JSON 桥 |
 | `internal/provider/`、`internal/session/` | 平台适配、认证与会话 |
 | `internal/store/`、`internal/sqlite/`、`internal/security/` | 本地数据、系统数据库与安全边界 |
-| `internal/desktop/`、`desktop/` | Windows 原生集成、独立 Wails Go 模块及内嵌前端 |
+| `internal/desktop/`、`desktop/` | Windows/macOS 原生集成、独立 Wails Go 模块及内嵌前端 |
 | `frontend/src/` | 原生 DOM TypeScript 界面和唯一播放器 |
 | `cmd/demo/`、`tests/e2e/` | 合成演示与浏览器回归 |
 

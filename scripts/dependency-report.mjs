@@ -9,7 +9,7 @@ import { licenseFiles } from './license-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const binary = path.resolve(root, process.argv[2] || 'build/Starling.exe');
-const out = path.join(root, 'build/compliance');
+const out = path.resolve(root, process.argv[3] || 'build/compliance');
 const go = (args, cwd = root) => execFileSync('go', args, { cwd, encoding: 'utf8', windowsHide: true });
 const info = go(['version', '-m', binary]);
 const binaryGoVersion = /:\s+(go\S+)\s*$/.exec(info.split(/\r?\n/)[0])?.[1];
@@ -74,4 +74,4 @@ await writeFile(path.join(out, 'license-inventory.json'), JSON.stringify({
   binary: path.basename(binary), sha256: checksum, modules: review,
   note: 'Recursive source-tree license/notice collection, including Go runtime/toolchain. This is a review superset, not a determination that every collected notice applies to the binary. Platform and codec runtime terms still require separate review.'
 }, null, 2) + '\n');
-console.log(`Inventory: ${components.length} components; ${review.reduce((n, r) => n + r.licenseFiles.length, 0)} notice files; ${review.filter(r => !r.licenseFiles.length).length} components without notice texts. Output: build/compliance/`);
+console.log(`Inventory: ${components.length} components; ${review.reduce((n, r) => n + r.licenseFiles.length, 0)} notice files; ${review.filter(r => !r.licenseFiles.length).length} components without notice texts. Output: ${out}`);

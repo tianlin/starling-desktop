@@ -46,6 +46,7 @@ export interface Session {
     };
     persistent: boolean;
     storageAvailable: boolean;
+    storageWarning?: string;
 }
 export interface Settings {
     volume: number;
@@ -90,6 +91,7 @@ export interface Playback {
     position: number;
 }
 export interface DesktopInfo {
+    platform?: string;
     tray: boolean;
     mediaKey: boolean;
     demo: boolean;
