@@ -17,37 +17,45 @@ import (
 const Version = "0.1.0-alpha.1"
 
 type Service struct {
-	p                provider.Provider
-	store            *store.Store
-	session          *session.Manager
-	mu               sync.Mutex
-	settings         model.Settings
-	stages           map[string]*libraryStage
-	revision         uint64
-	smsUntil         time.Time
-	playID           string
-	playCancel       context.CancelFunc
-	playEpoch        uint64
-	playGeneration   uint64
-	playOrdered      bool
-	log              []diagnosticEvent
-	startupError     error
-	commentEpoch     uint64
-	commentAttempts  map[string]struct{}
-	commentBusy      bool
-	commentReadEpoch uint64
-	commentTargets   map[string]map[string]string
+	p                     provider.Provider
+	store                 *store.Store
+	session               *session.Manager
+	mu                    sync.Mutex
+	settings              model.Settings
+	stages                map[string]*libraryStage
+	revision              uint64
+	smsUntil              time.Time
+	playID                string
+	playCancel            context.CancelFunc
+	playEpoch             uint64
+	playGeneration        uint64
+	playOrdered           bool
+	log                   []diagnosticEvent
+	startupError          error
+	commentEpoch          uint64
+	commentAttempts       map[string]struct{}
+	commentBusy           bool
+	commentReadEpoch      uint64
+	commentTargets        map[string]map[string]string
+	searchEpoch           uint64
+	searchGeneration      uint64
+	subscriptionEpoch     uint64
+	subscriptionAttempts  map[string]bool
+	subscriptionBusy      map[string]bool
+	subscriptionPending   map[string]bool
+	subscriptionConfirmed map[string]model.Item
 }
 type Bootstrap struct {
-	Version            string            `json:"version"`
-	Adapter            string            `json:"adapter"`
-	Session            model.SessionView `json:"session"`
-	Settings           model.Settings    `json:"settings"`
-	Queue              []model.Item      `json:"queue"`
-	Bookmarks          []model.Item      `json:"bookmarks"`
-	History            []model.Progress  `json:"history"`
-	Warning            *model.AppError   `json:"warning,omitempty"`
-	PlaybackGeneration uint64            `json:"playbackGeneration"`
+	Version             string            `json:"version"`
+	Adapter             string            `json:"adapter"`
+	Session             model.SessionView `json:"session"`
+	Settings            model.Settings    `json:"settings"`
+	Queue               []model.Item      `json:"queue"`
+	Bookmarks           []model.Item      `json:"bookmarks"`
+	History             []model.Progress  `json:"history"`
+	Warning             *model.AppError   `json:"warning,omitempty"`
+	PlaybackGeneration  uint64            `json:"playbackGeneration"`
+	DiscoveryGeneration uint64            `json:"discoveryGeneration"`
 }
 
 func New(p provider.Provider, db *store.Store, v security.Vault) *Service {
@@ -106,6 +114,9 @@ func (s *Service) Bootstrap() (Bootstrap, error) {
 		s.mu.Lock()
 		s.resetPlaybackEpochLocked(b.Session.Epoch)
 		b.PlaybackGeneration = s.playGeneration
+		if s.searchEpoch == b.Session.Epoch {
+			b.DiscoveryGeneration = s.searchGeneration
+		}
 		s.mu.Unlock()
 		if _, e := s.store.Get(scope, "queue", "main", &b.Queue); e != nil {
 			return e
@@ -168,6 +179,13 @@ func (s *Service) Restore(ctx context.Context) error {
 	return s.session.Restore(ctx)
 }
 func (s *Service) clearTransientLocked() {
+	s.searchEpoch = 0
+	s.searchGeneration = 0
+	s.subscriptionEpoch = 0
+	s.subscriptionAttempts = nil
+	s.subscriptionBusy = nil
+	s.subscriptionPending = nil
+	s.subscriptionConfirmed = nil
 	s.commentReadEpoch = 0
 	s.commentTargets = nil
 	s.commentAttempts = nil

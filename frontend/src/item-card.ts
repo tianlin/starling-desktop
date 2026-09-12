@@ -2,13 +2,13 @@ import type { Item } from './types.js';
 import { el, button, cover } from './dom.js';
 import { formatDate } from './util.js';
 export interface ItemCardActions { details(it: Item): Promise<unknown>; podcast(it: Item): Promise<unknown>; play(it: Item): Promise<unknown>; queue(op: string, it: Item): Promise<unknown>; bookmark(op: string, it: Item): Promise<unknown>; external(it: Item): Promise<unknown>; notice(e: unknown): void; }
-export function renderItemCard(it: Item, actions: ItemCardActions, local?: 'queue' | 'bookmarks', updates = false): HTMLElement {
+export function renderItemCard(it: Item, actions: ItemCardActions, local?: 'queue' | 'bookmarks', updates = false, podcastContext = '节目'): HTMLElement {
         const card = el('article', `episode-card${it.kind === 'podcast' ? ' podcast-card' : ''}`);
         card.dataset.id = it.id;
         const art = cover(it, true);
         if (updates && it.podcastId) { const link = button('', () => actions.podcast(it), 'cover-link'); link.setAttribute('aria-label', `查看节目 ${it.podcastTitle ?? ''}`); link.append(art); card.append(link); } else card.append(art);
         const content = el('div', 'episode-content');
-        const over = updates && it.podcastId ? button(it.podcastTitle ?? '查看节目', () => actions.podcast(it), 'episode-meta text-button') : el('div', 'episode-meta', it.kind === 'podcast' ? '节目 · 我的订阅' : (it.podcastTitle ?? '播客单集'));
+        const over = updates && it.podcastId ? button(it.podcastTitle ?? '查看节目', () => actions.podcast(it), 'episode-meta text-button') : el('div', 'episode-meta', it.kind === 'podcast' ? podcastContext : (it.podcastTitle ?? '播客单集'));
         content.append(over, button(it.title, () => actions.details(it), 'episode-title'), el('p', 'episode-description', it.description ?? ''));
         const meta = [formatDate(it.published), it.duration ? `${Math.round(it.duration / 60)} 分钟` : '', it.restricted ? '受限内容' : ''].filter(Boolean).join('  ·  ');
         content.append(el('small', 'muted', meta));
