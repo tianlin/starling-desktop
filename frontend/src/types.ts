@@ -1,0 +1,78 @@
+export interface AppFailure {
+    code: string;
+    message: string;
+    retryAfter?: number;
+}
+export interface Item {
+    kind: 'episode' | 'podcast';
+    id: string;
+    title: string;
+    podcastId?: string;
+    podcastTitle?: string;
+    description?: string;
+    showNotes?: string;
+    image?: string;
+    duration?: number;
+    published?: string;
+    sourceUrl: string;
+    restricted: boolean;
+    restriction?: string;
+}
+export interface Session {
+    epoch: number;
+    state: string;
+    identity?: {
+        id: string;
+        nickname: string;
+        avatar?: string;
+    };
+    persistent: boolean;
+    storageAvailable: boolean;
+}
+export interface Settings {
+    volume: number;
+    rate: number;
+    closeBehavior: 'ask' | 'tray' | 'exit';
+    experimentalAccount: boolean;
+}
+export interface Progress {
+    item: Item;
+    position: number;
+    duration: number;
+    ended: boolean;
+    updatedAt: string;
+}
+export interface Library {
+    items: Item[];
+    cursor: string;
+    status: string;
+    complete: boolean;
+    updatedAt?: string;
+    error?: AppFailure;
+    pages: number;
+    revision: number;
+    epoch: number;
+}
+export interface Bootstrap {
+    version: string;
+    adapter: string;
+    session: Session;
+    settings: Settings;
+    queue: Item[];
+    bookmarks: Item[];
+    history: Progress[];
+    warning?: AppFailure;
+}
+export interface Playback {
+    item: Item;
+    url: string;
+    epoch: number;
+    position: number;
+}
+export interface DesktopInfo {
+    tray: boolean;
+    mediaKey: boolean;
+    demo: boolean;
+    message?: string;
+}
+export type Call = <T = unknown>(action: string, payload?: unknown) => Promise<T>;

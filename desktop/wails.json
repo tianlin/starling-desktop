@@ -1,0 +1,11 @@
+{
+ "$schema": "https://wails.io/schemas/config.v2.json",
+ "name": "Starling",
+ "outputfilename": "Starling",
+ "frontend:dir": "../frontend",
+ "frontend:install": "npm ci --ignore-scripts",
+ "frontend:build": "npm run build",
+ "frontend:dev:watcher": "",
+ "author": {"name": "Starling contributors", "email": ""},
+ "info": {"companyName": "Starling contributors", "productName": "Starling", "productVersion": "0.1.0", "copyright": "Copyright Starling contributors", "comments": "Unofficial experimental podcast desktop client"}
+}

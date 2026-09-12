@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>Starling · 星听</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<div id="demo-banner" hidden>演示环境 · 全部账号、节目与音频均为合成测试数据，不连接小宇宙</div>
+<div class="shell">
+<aside class="sidebar"><a class="brand" href="#" aria-label="Starling 首页"><span class="brand-mark">s<span>·</span></span><span>Starling<small>星听 · 桌面播客</small></span></a>
+<div class="nav-label">我的收听空间</div><nav id="navigation" aria-label="主导航"></nav>
+<button id="open-link" class="button link-entry"><span>＋</span> 打开小宇宙链接</button>
+<div class="sidebar-bottom"><div class="local-note"><span class="status-dot"></span>本机保存 · 无项目方云端</div><button id="account-button" class="account-button"><span class="avatar">访</span><span><strong id="account-name">访客模式</strong><small id="account-caption">连接你的个人播客库</small></span><span>›</span></button></div>
+</aside>
+<main class="main"><header class="topbar"><div class="breadcrumbs">你的播客，随时继续。 <span class="pill">ALPHA</span></div><button class="button subtle" id="top-account">连接账号</button></header>
+<div id="notification" class="notice" role="status" hidden></div>
+<section id="page" tabindex="-1" aria-label="页面内容"></section></main>
+</div>
+<footer class="playerbar" aria-label="播放器"><div class="now-playing"><div id="player-art" class="cover small-cover color-0">♪</div><div class="now-text"><button id="player-title" class="text-button truncate">选择一集，开始收听</button><div id="player-subtitle" class="muted truncate">进度仅保存在本机</div></div></div>
+<div class="transport"><div class="transport-buttons"><button id="backward" class="icon-button" aria-label="后退15秒">↶<small>15</small></button><button id="toggle-play" class="main-play" aria-label="播放" disabled>▶</button><button id="forward" class="icon-button" aria-label="前进30秒">↷<small>30</small></button></div><div class="timeline"><span id="position">0:00</span><input id="seek" type="range" min="0" max="1" step="1" value="0" disabled aria-label="播放进度"><span id="duration">0:00</span></div></div>
+<div class="player-options"><select id="rate" aria-label="播放倍速"><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option><option value="1.5">1.5×</option><option value="2">2×</option></select><label class="volume-label"><span aria-hidden="true">◖</span><input id="volume" type="range" min="0" max="1" step="0.01" value="0.8" aria-label="音量"></label><button id="queue-button" class="icon-button" aria-label="打开稍后听">≡<span id="queue-count">0</span></button></div>
+<div id="player-message" class="player-message" role="status" hidden></div>
+<audio id="audio" preload="metadata"></audio></footer>
+<dialog id="modal"><div id="modal-content"></div></dialog>
+<script type="module" src="/main.js"></script>
+</body></html>

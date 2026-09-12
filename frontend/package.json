@@ -1,0 +1,12 @@
+{
+  "name": "starling-desktop-ui",
+  "version": "0.1.0-alpha.1",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/copy.mjs",
+    "test": "npm run build && node --test tests/*.test.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {"typescript": "5.8.3"}
+}

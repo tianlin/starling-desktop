@@ -1,0 +1,50 @@
+name: Development checks (not release acceptance)
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: npm ci --ignore-scripts && npm test
+        working-directory: frontend
+      - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
+  windows-candidate:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.5'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+      - name: Build and run native core tests, then build Wails
+        shell: powershell
+        run: .\scripts\build-windows.ps1
+      - name: Upload unsigned development candidate (not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: starling-unsigned-development-candidate
+          path: |
+            build/Starling.exe
+            build/SHA256SUMS.txt
+            desktop/go.sum
+          if-no-files-found: error
