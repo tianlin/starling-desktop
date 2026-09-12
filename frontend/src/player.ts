@@ -286,7 +286,7 @@ export class Player {
                 if (seq !== this.serial || epoch !== this.epoch() || this.disposed) return;
                 const prepared = this.explicitResume ? null : await this.prepareProgress(epoch, this.item.id, this.position, seq);
                 if (seq !== this.serial || requestID !== this.requestID || epoch !== this.epoch() || this.disposed) return;
-                if (prepared && !this.explicitResume) {
+                if (prepared && !this.explicitResume && prepared.position !== this.position) {
                     this.savedPosition = prepared.position;
                     this.checkpoint = prepared.position;
                     this.checkpointEnded = false;

@@ -10,6 +10,15 @@ class AudioMock extends EventTarget {
   removeAttribute(name){if(name==='src')this.src='';}
 }
 const item=id=>({kind:'episode',id,title:id,sourceUrl:'https://www.xiaoyuzhoufm.com/episode/'+id,restricted:false});
+test('unseekable paused playback keeps saving when prepare falls back to current position',async()=>{
+ const audio=new AudioMock(),saved=[];
+ audio.seekable={length:0,start:()=>0,end:()=>0};
+ const p=new Player(audio,async(a,v)=>{if(a==='playback.resolve')return {item:item('a'),url:'a',position:0};if(a==='progress.prepare')throw Error('offline');if(a==='progress.save')saved.push(v.progress);},()=>1,()=>{});
+ await p.play(item('a'));audio.currentTime=1;p.pause();await p.flush();
+ await p.toggle();audio.currentTime=2;audio.dispatchEvent(new Event('timeupdate'));p.pause();await p.flush();
+ assert.equal(saved.at(-1).position,2);
+ await p.dispose();
+});
 test('normal loading and restoring a checkpoint never flash a seek warning before media is ready',async()=>{
  for(const position of [0,42]) {
   const audio=new AudioMock(),messages=[];

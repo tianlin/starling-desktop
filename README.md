@@ -24,6 +24,8 @@
 
 ## 开始使用
 
+无需自行编译：从 [GitHub Releases](https://github.com/tianlin/starling-desktop/releases/tag/v0.4.0) 下载 0.4.0 公开预览版及 SHA-256 校验文件。Windows 下载 Windows x64 ZIP，解压后运行 `Starling.exe`；需要 WebView2。预览版保留尚未完成的实机验收说明，Windows 未签名，首次启动可能出现系统安全提示。
+
 Windows 运行 `build/Starling.exe`，或按下方步骤安装。macOS 下载对应芯片的 DMG 并拖入 Applications，详见 [macOS 安装与验收](docs/MACOS.md)。公开链接和本地书签可在访客模式使用；个人库、探索和评论需要在设置中启用“账号接入”，再使用小宇宙 App 扫描二维码。凭据仅在本机处理，保存会话是可选项。
 
 扫码采用官方网页现有流程，并重新核对听众身份，详见 [扫码说明](docs/QR_LOGIN.md)。这不是平台提供给本项目的 OAuth 授权；私有接口可能变化、拒绝访问或触发风控。短信路径缺少当前网页所需的人机验证参数，可能无法发送。客户端不伪造移动设备指纹，不绕过验证码、付费限制或访问控制，也不读取其他应用会话。

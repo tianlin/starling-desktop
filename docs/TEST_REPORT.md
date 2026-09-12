@@ -127,3 +127,7 @@ node scripts/dependency-report.mjs build/Starling-candidate-020.exe
 - Windows `Starling-candidate-040.exe` 构建及 0.4.0 文件/产品版本资源检查通过；SHA-256：`03eec3f51ad15f4fb8f320bf6baa8a0bfd881204a54d971a3c1c9c94170d6c6a`。
 - 真实手机云端位置读取通过；候选应用自动上传后，用户确认 iPhone 接着播放。详细证据及剩余多轮延迟/误差、离线和倒回重听验收见 [PROGRESS_SYNC.md](PROGRESS_SYNC.md)。
 - 本节不代表新的 macOS 实机验证、签名验证或所有发布指标已通过；历史版本记录保留如下。
+
+### 0.4.0 发布前媒体回归修复
+
+CI 媒体测试发现不可定位音频在暂停恢复后停止保存进度。原因是同位置恢复被当成尚未完成的定位；现已跳过相同位置的自动定位，新增测试先复现失败再验证通过，前端共 117 项测试通过。上方候选哈希属于修复前构建，公开下载包以 Release 附带校验文件为准。
