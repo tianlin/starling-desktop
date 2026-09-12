@@ -78,29 +78,32 @@ func (s *Service) dispatch(ctx context.Context, action, payload string) (any, er
 	switch action {
 	case "comments.create":
 		var v struct {
-			Epoch     uint64 `json:"epoch"`
-			EpisodeID string `json:"episodeId"`
-			Text      string `json:"text"`
-			RequestID string `json:"requestId"`
+			Epoch            uint64 `json:"epoch"`
+			EpisodeID        string `json:"episodeId"`
+			Text             string `json:"text"`
+			RequestID        string `json:"requestId"`
+			ReplyToCommentID string `json:"replyToCommentId"`
+			PrimaryCommentID string `json:"primaryCommentId"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
 		}
-		return s.CreateComment(ctx, v.Epoch, v.EpisodeID, v.Text, v.RequestID)
+		return s.CreateCommentReply(ctx, v.Epoch, v.EpisodeID, v.Text, v.RequestID, v.ReplyToCommentID, v.PrimaryCommentID)
 	case "comments.list", "comments.thread":
 		var v struct {
-			Epoch     uint64 `json:"epoch"`
-			EpisodeID string `json:"episodeId"`
-			CommentID string `json:"commentId"`
-			Cursor    string `json:"cursor"`
+			Epoch     uint64             `json:"epoch"`
+			EpisodeID string             `json:"episodeId"`
+			CommentID string             `json:"commentId"`
+			Cursor    string             `json:"cursor"`
+			Order     model.CommentOrder `json:"order"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
 		}
-		if (action == "comments.thread" && v.CommentID == "") || (action == "comments.list" && v.CommentID != "") {
+		if (action == "comments.thread" && (v.CommentID == "" || v.Order != "")) || (action == "comments.list" && v.CommentID != "") {
 			return nil, model.Err("INVALID_REQUEST", "评论请求类型与参数不匹配。")
 		}
-		return s.Comments(ctx, v.Epoch, v.EpisodeID, v.CommentID, v.Cursor)
+		return s.CommentsOrdered(ctx, v.Epoch, v.EpisodeID, v.CommentID, v.Cursor, v.Order)
 	case "account.qrStart":
 		if e := s.checkExperimental(); e != nil {
 			return nil, e

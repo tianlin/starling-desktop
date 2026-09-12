@@ -14,16 +14,27 @@ type CommentReader interface {
 	CommentThread(context.Context, string, string, string, string) (model.CommentPage, error)
 }
 
+type SortedCommentReader interface {
+	CommentsOrdered(context.Context, string, string, string, model.CommentOrder) (model.CommentPage, error)
+}
+
 func (c *Client) Comments(ctx context.Context, token, episodeID, cursor string) (model.CommentPage, error) {
-	return c.readComments(ctx, token, episodeID, "", cursor)
+	return c.CommentsOrdered(ctx, token, episodeID, cursor, model.CommentOrderHot)
+}
+func (c *Client) CommentsOrdered(ctx context.Context, token, episodeID, cursor string, order model.CommentOrder) (model.CommentPage, error) {
+	order, e := model.NormalizeCommentOrder(order)
+	if e != nil {
+		return model.CommentPage{}, e
+	}
+	return c.readComments(ctx, token, episodeID, "", cursor, order)
 }
 func (c *Client) CommentThread(ctx context.Context, token, episodeID, commentID, cursor string) (model.CommentPage, error) {
 	if !security.ValidID(commentID) {
 		return model.CommentPage{}, model.Err("INVALID_ID", "评论 ID 无效。")
 	}
-	return c.readComments(ctx, token, episodeID, commentID, cursor)
+	return c.readComments(ctx, token, episodeID, commentID, cursor, model.CommentOrderHot)
 }
-func (c *Client) readComments(ctx context.Context, token, episodeID, commentID, cursor string) (model.CommentPage, error) {
+func (c *Client) readComments(ctx context.Context, token, episodeID, commentID, cursor string, order model.CommentOrder) (model.CommentPage, error) {
 	if !validToken(token) {
 		return model.CommentPage{}, model.Err("UNAUTHORIZED", "请连接账号后读取评论。")
 	}
@@ -32,6 +43,9 @@ func (c *Client) readComments(ctx context.Context, token, episodeID, commentID, 
 	}
 	thread := commentID != ""
 	body := map[string]any{"owner": map[string]string{"id": episodeID, "type": "EPISODE"}, "order": "HOT"}
+	if order == model.CommentOrderLatest {
+		body["order"] = "TIME"
+	}
 	path := "/v1/comment/list-primary"
 	if thread {
 		if cursor != "" {
@@ -40,12 +54,9 @@ func (c *Client) readComments(ctx context.Context, token, episodeID, commentID, 
 		path = "/v1/comment/list-thread"
 		body = map[string]any{"primaryCommentId": commentID, "order": "SMART"}
 	} else if cursor != "" {
-		key, e := DecodeCursor(cursor)
+		key, e := decodeScopedCommentCursor(cursor, episodeID, order)
 		if e != nil {
 			return model.CommentPage{}, e
-		}
-		if !validCommentCursor(key) {
-			return model.CommentPage{}, model.Err("BAD_CURSOR", "评论分页游标结构不受支持。")
 		}
 		body["loadMoreKey"] = key
 	}
@@ -53,18 +64,38 @@ func (c *Client) readComments(ctx context.Context, token, episodeID, commentID, 
 	if e != nil {
 		return model.CommentPage{}, e
 	}
-	return decodeCommentPage(b, episodeID, thread)
+	page, e := decodeCommentPageOrdered(b, episodeID, thread, order)
+	if e != nil {
+		return model.CommentPage{}, e
+	}
+	if thread {
+		for _, item := range page.Items {
+			if item.PrimaryCommentID != "" && item.PrimaryCommentID != commentID {
+				return model.CommentPage{}, model.Err("BAD_RESPONSE", "回复不属于当前评论串。")
+			}
+		}
+	}
+	return page, nil
 }
 
-func validCommentCursor(raw json.RawMessage) bool {
+func validCommentCursor(raw json.RawMessage, order model.CommentOrder) bool {
 	var m map[string]json.RawMessage
 	if json.Unmarshal(raw, &m) != nil || m == nil {
 		return false
 	}
 	var id, direction, section string
-	var score float64
-	if json.Unmarshal(m["id"], &id) != nil || !security.ValidID(id) || json.Unmarshal(m["direction"], &direction) != nil || direction != "NEXT" || json.Unmarshal(m["hotSortScore"], &score) != nil {
+	var score *float64
+	if len(raw) > 5000 || json.Unmarshal(m["id"], &id) != nil || !security.ValidID(id) || json.Unmarshal(m["direction"], &direction) != nil || direction != "NEXT" {
 		return false
+	}
+	if order == model.CommentOrderHot {
+		if json.Unmarshal(m["hotSortScore"], &score) != nil || score == nil {
+			return false
+		}
+	} else if v, ok := m["hotSortScore"]; ok {
+		if json.Unmarshal(v, &score) != nil || score == nil {
+			return false
+		}
 	}
 	if v, ok := m["section"]; ok && json.Unmarshal(v, &section) != nil {
 		return false
@@ -73,6 +104,28 @@ func validCommentCursor(raw json.RawMessage) bool {
 }
 
 func decodeCommentPage(b []byte, episodeID string, thread bool) (model.CommentPage, error) {
+	return decodeCommentPageOrdered(b, episodeID, thread, model.CommentOrderHot)
+}
+
+type scopedCommentCursor struct {
+	EpisodeID string             `json:"episodeID"`
+	Order     model.CommentOrder `json:"order"`
+	Raw       json.RawMessage    `json:"raw"`
+}
+
+func decodeScopedCommentCursor(cursor, episodeID string, order model.CommentOrder) (json.RawMessage, error) {
+	raw, e := DecodeCursor(cursor)
+	if e != nil {
+		return nil, e
+	}
+	var scope scopedCommentCursor
+	if json.Unmarshal(raw, &scope) != nil || scope.EpisodeID != episodeID || scope.Order != order || !validCommentCursor(scope.Raw, order) {
+		return nil, model.Err("BAD_CURSOR", "评论分页游标不属于当前单集或排序，或结构不受支持。")
+	}
+	return scope.Raw, nil
+}
+
+func decodeCommentPageOrdered(b []byte, episodeID string, thread bool, order model.CommentOrder) (model.CommentPage, error) {
 	var env map[string]json.RawMessage
 	bad := func() (model.CommentPage, error) {
 		return model.CommentPage{}, model.Err("BAD_RESPONSE", "评论响应结构不符合已验证契约。")
@@ -92,9 +145,14 @@ func decodeCommentPage(b []byte, episodeID string, thread bool) (model.CommentPa
 			complete = false
 		} else {
 			key, e := DecodeCursor(cursor)
-			if e != nil || !validCommentCursor(key) {
+			if e != nil || !validCommentCursor(key, order) {
 				return bad()
 			}
+			raw, e := json.Marshal(scopedCommentCursor{EpisodeID: episodeID, Order: order, Raw: key})
+			if e != nil {
+				return bad()
+			}
+			cursor = EncodeCursor(raw)
 		}
 	}
 	if !thread {
@@ -136,6 +194,8 @@ func decodeCommentPage(b []byte, episodeID string, thread bool) (model.CommentPa
 			Text       *string         `json:"text"`
 			CreatedAt  string          `json:"createdAt"`
 			ReplyCount int             `json:"threadReplyCount"`
+			Thread     string          `json:"thread"`
+			ReplyTo    json.RawMessage `json:"replyToComment"`
 		}
 		if json.Unmarshal(raw, &v) != nil || !security.ValidID(v.ID) || seen[v.ID] || v.Owner.ID != episodeID || v.Owner.Type != "EPISODE" || v.Text == nil || v.ReplyCount < 0 {
 			return bad()
@@ -147,8 +207,43 @@ func decodeCommentPage(b []byte, episodeID string, thread bool) (model.CommentPa
 		if e != nil {
 			return bad()
 		}
+		if v.Thread != "" && !security.ValidID(v.Thread) {
+			return bad()
+		}
+		var ref *model.CommentReference
+		if len(v.ReplyTo) > 0 && string(v.ReplyTo) != "null" {
+			var target struct {
+				ID    string `json:"id"`
+				Owner *struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"owner"`
+				Author struct {
+					Nickname string `json:"nickname"`
+				} `json:"author"`
+				Text   *string `json:"text"`
+				Thread string  `json:"thread"`
+			}
+			if json.Unmarshal(v.ReplyTo, &target) != nil || !security.ValidID(target.ID) || target.Text == nil {
+				return bad()
+			}
+			if target.Owner != nil && (target.Owner.ID != episodeID || target.Owner.Type != "EPISODE") {
+				return bad()
+			}
+			if target.Thread != "" && (!security.ValidID(target.Thread) || v.Thread != "" && target.Thread != v.Thread) {
+				return bad()
+			}
+			// Without an owner the relationship cannot be established safely.
+			if target.Owner != nil {
+				summary := []rune(*target.Text)
+				if len(summary) > 200 {
+					summary = summary[:200]
+				}
+				ref = &model.CommentReference{ID: target.ID, Nickname: target.Author.Nickname, Summary: string(summary)}
+			}
+		}
 		seen[v.ID] = true
-		out.Items = append(out.Items, model.Comment{ID: v.ID, Author: author, Text: *v.Text, CreatedAt: v.CreatedAt, ReplyCount: v.ReplyCount})
+		out.Items = append(out.Items, model.Comment{ID: v.ID, Author: author, Text: *v.Text, CreatedAt: v.CreatedAt, ReplyCount: v.ReplyCount, PrimaryCommentID: v.Thread, ReplyTo: ref})
 	}
 	return out, nil
 }

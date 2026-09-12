@@ -11,6 +11,8 @@ export interface Comment {
     text: string;
     createdAt: string;
     replyCount?: number;
+    primaryCommentId?: string;
+    replyTo?: { id: string; nickname: string; summary: string };
 }
 export interface CommentPage {
     items: Comment[];
@@ -18,6 +20,7 @@ export interface CommentPage {
     complete: boolean;
 }
 export interface CommentCreated { comment: Comment }
+export type CommentOrder = 'hot' | 'latest';
 export interface Item {
     kind: 'episode' | 'podcast';
     id: string;

@@ -6,6 +6,8 @@ import { APIError } from '../dist/api.js';
 const session = (epoch = 1, id = 'alice') => ({ epoch, state: 'connected', identity: { id, nickname: id } });
 const comment = id => ({ id, author: { id: 'u', nickname: '听友' }, text: '正文\n<script>text</script>', createdAt: '2026-09-12T00:00:00Z', replyCount: 1 });
 const created = id => ({ ...comment(id), author: { id: 'alice', nickname: 'alice' } });
+const nested = (id = 'nested') => ({ ...comment(id), primaryCommentId: 'parent', replyTo: { id: 'parent', nickname: '听友', summary: '原文' } });
+const replyCreated = (id = 'new-reply', to = 'parent') => ({ ...created(id), primaryCommentId: 'parent', replyTo: { id: to, nickname: '听友', summary: '原文' } });
 const page = (ids, cursor = '', complete = true) => ({ items: ids.map(comment), cursor, complete });
 
 test('comments are lazy, paginated with ID deduplication, and retained on revisit', async () => {
@@ -20,13 +22,13 @@ test('comments are lazy, paginated with ID deduplication, and retained on revisi
     assert.equal(calls.length, 2);
 });
 
-test('route and account changes discard late responses and clear private data', async () => {
+test('late reads update their own episode cache and account changes clear private data', async () => {
     const pending = [];
     const c = new CommentsController(() => new Promise(resolve => pending.push(resolve)));
     c.setSession(session()); c.open('ep'); const first = c.load();
     c.leave(); c.open('other'); pending.shift()(page(['old'])); await first;
     assert.deepEqual(c.state.items, []);
-    c.open('ep'); const second = c.load();
+    c.open('ep'); assert.deepEqual(c.state.items.map(x => x.id), ['old']); const second = c.refresh();
     c.setSession(session(2, 'bob')); pending.shift()(page(['alice'])); await second;
     assert.deepEqual(c.state.items, []);
     c.setSession({ epoch: 3, state: 'guest' }); await c.load();
@@ -47,15 +49,13 @@ test('reply pagination is independent and failure preserves loaded comments', as
     assert.equal(c.state.items.length, 1); assert.equal(c.state.error, '暂时失败');
 });
 
-test('reopening a route can retry while its old request is pending', async () => {
+test('reopening a route shares its pending request without issuing duplicate reads', async () => {
     const pending = [];
     const c = new CommentsController(() => new Promise(resolve => pending.push(resolve)));
     c.setSession(session()); c.open('ep'); const old = c.load();
     c.leave(); c.open('ep'); const current = c.load();
-    pending[0](page(['stale'])); await old;
-    assert.equal(c.state.loading, true);
-    assert.deepEqual(c.state.items, []);
-    pending[1](page(['fresh'])); await current;
+    assert.equal(pending.length, 1);
+    pending[0](page(['fresh'])); await old; await current;
     assert.equal(c.state.loading, false);
     assert.deepEqual(c.state.items.map(x => x.id), ['fresh']);
 });
@@ -72,7 +72,7 @@ test('re-expanding replies retains their current page until explicit load more',
     assert.equal(requests, 2);
 });
 
-test('drafts survive navigation and only confirmed create clears and prepends', async () => {
+test('drafts survive navigation and confirmed create keeps separate publication feedback', async () => {
     let resolve, payload;
     const c = new CommentsController(async (_, args) => { payload = args; return new Promise(r => { resolve = r; }); });
     c.setSession(session()); c.open('ep'); c.setDraft('hello\nworld');
@@ -82,7 +82,7 @@ test('drafts survive navigation and only confirmed create clears and prepends', 
     c.open('other'); c.setDraft('other draft');
     resolve({ comment: created('created') }); await sending;
     assert.equal(c.state.draft, 'other draft'); assert.equal(original.draft, '');
-    c.open('ep'); assert.equal(c.state.items[0].id, 'created');
+    c.open('ep'); assert.equal(c.state.confirmed.get('created').id, 'created'); assert.deepEqual(c.state.items, []);
     assert.equal(c.state.sending, false); assert.ok(payload.requestId);
     c.setDraft('private'); c.setSession(session(2, 'bob')); assert.equal(c.state.draft, '');
 });
@@ -107,16 +107,69 @@ test('malformed and duplicate result are uncertain; authorization failure retain
 });
 
 test('successful create survives an older read and refresh preserves content on failure', async () => {
-    let resolveRead, fail = false;
+    const pending = []; let fail = false;
     const c = new CommentsController(async action => {
         if (action === 'comments.create') return { comment: created('created') };
         if (fail) throw new Error('refresh failed');
-        return new Promise(resolve => { resolveRead = resolve; });
+        return new Promise(resolve => { pending.push(resolve); });
     });
     c.setSession(session()); c.open('ep'); const reading = c.load(); c.setDraft('new'); await c.submit();
-    resolveRead(page(['old'])); await reading;
-    assert.deepEqual(c.state.items.map(x => x.id), ['created', 'old']);
-    fail = true; await c.refresh(); assert.deepEqual(c.state.items.map(x => x.id), ['created', 'old']);
+    pending[0](page(['old'])); await reading;
+    pending.at(-1)(page(['fresh'])); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(c.state.confirmed.has('created'), true);
+    assert.deepEqual(c.state.items.map(x => x.id), ['fresh']);
+    fail = true; await c.refresh(); assert.deepEqual(c.state.items.map(x => x.id), ['fresh']);
+});
+
+test('sorts cache their own cursors and scroll, share drafts, and restore per episode', async () => {
+    const calls = [];
+    const c = new CommentsController(async (_, args) => { calls.push(args); return page([args.order], args.order + '-next', false); });
+    c.setSession(session()); c.open('ep'); await c.load(); c.setDraft('shared'); c.rememberScroll(400);
+    assert.equal(c.state.order, 'hot'); await c.selectOrder('latest'); c.rememberScroll(800);
+    assert.equal(c.state.draft, 'shared'); assert.deepEqual(c.state.items.map(x => x.id), ['latest']);
+    await c.selectOrder('hot'); assert.equal(c.state.scroll, 400); assert.equal(c.state.cursor, 'hot-next');
+    await c.selectOrder('latest'); c.open('other'); assert.equal(c.state.order, 'hot'); c.open('ep');
+    assert.equal(c.state.order, 'latest'); assert.equal(c.state.scroll, 800); assert.equal(calls.length, 2);
+});
+
+test('late sort response settles only its own cache and does not redraw active order', async () => {
+    const pending = [];
+    const c = new CommentsController(() => new Promise(resolve => pending.push(resolve)));
+    c.setSession(session()); c.open('ep'); const hot = c.load(); const latest = c.selectOrder('latest');
+    pending[1](page(['latest'])); await latest;
+    let draws = 0; c.onChange = () => { draws++; };
+    pending[0](page(['hot'])); await hot;
+    assert.deepEqual(c.state.items.map(x => x.id), ['latest']); assert.equal(draws, 0);
+    await c.selectOrder('hot'); assert.deepEqual(c.state.items.map(x => x.id), ['hot']);
+});
+
+test('new root keeps server sort order and feedback disappears once fetched by ID', async () => {
+    let published = false;
+    const c = new CommentsController(async (action, args) => {
+        if (action === 'comments.create') { published = true; return { comment: created('new') }; }
+        return page(published && args.order === 'latest' ? ['new', 'older'] : ['popular']);
+    });
+    c.setSession(session()); c.open('ep'); await c.load(); c.setDraft('new'); await c.submit();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(c.state.items.map(x => x.id), ['popular']); assert.equal(c.state.confirmed.has('new'), true);
+    await c.selectOrder('latest'); assert.deepEqual(c.state.items.map(x => x.id), ['new', 'older']);
+    assert.equal(c.state.confirmed.has('new'), false);
+});
+
+test('refresh failure and next-page cursors remain scoped to their sort', async () => {
+    const calls = []; let fail = false;
+    const c = new CommentsController(async (_, args) => {
+        calls.push(args);
+        if (fail) throw new Error('refresh failed');
+        return page([args.order + (args.cursor ? '-page2' : '-page1')], args.cursor ? '' : args.order + '-next', !!args.cursor);
+    });
+    c.setSession(session()); c.open('ep'); await c.load(); await c.selectOrder('latest');
+    fail = true; await c.refresh(); assert.deepEqual(c.state.items.map(x => x.id), ['latest-page1']);
+    assert.equal(c.state.error, 'refresh failed');
+    await c.selectOrder('hot'); assert.equal(c.state.error, '');
+    fail = false; await c.load(); assert.equal(calls.at(-1).cursor, 'hot-next');
+    assert.deepEqual(c.state.items.map(x => x.id), ['hot-page1', 'hot-page2']);
+    await c.selectOrder('latest'); assert.equal(c.state.cursor, 'latest-next'); assert.equal(c.state.error, 'refresh failed');
 });
 
 test('refresh invalidates old read, resets pagination and guards repeated cursors', async () => {
@@ -193,4 +246,73 @@ test('acknowledging a published uncertain comment only clears draft without anot
     c.acknowledgePublished();
     assert.equal(requests, 1); assert.equal(c.state.draft, ''); assert.equal(c.state.uncertain, false);
     assert.equal(c.state.sendError, ''); assert.deepEqual(c.state.items, []);
+});
+
+test('reply target drafts remain separate across root, nested, cancel and sorting', async () => {
+    const c = new CommentsController(async action => action === 'comments.thread' ? { ...page([]), items: [nested()] } : page(['parent']));
+    c.setSession(session()); c.open('ep'); await c.load(); await c.loadThread('parent'); c.setDraft('root draft');
+    c.selectReply('parent'); c.setDraft('parent draft');
+    c.selectReply('nested', 'parent'); c.setDraft('nested draft'); await c.selectOrder('latest');
+    assert.equal(c.state.draft, 'nested draft'); assert.equal(c.state.replyTarget.id, 'nested');
+    c.cancelReply(); assert.equal(c.state.draft, 'root draft');
+    c.selectReply('parent'); assert.equal(c.state.draft, 'parent draft');
+    c.selectReply('nested', 'parent'); assert.equal(c.state.draft, 'nested draft');
+});
+
+test('reply send locks target, uses explicit relationship, and settles only original thread', async () => {
+    let resolve, payload;
+    const c = new CommentsController(async (action, args) => {
+        if (action === 'comments.create') { payload = args; return new Promise(r => { resolve = r; }); }
+        return action === 'comments.thread' ? { ...page([]), items: [nested()] } : page(['parent']);
+    });
+    c.setSession(session()); c.open('ep'); await c.load(); await c.loadThread('parent');
+    c.selectReply('nested', 'parent'); c.setDraft('reply'); const owner = c.state; const sending = c.submit();
+    c.cancelReply(); c.selectReply('parent'); assert.equal(c.state.replyTarget.id, 'nested');
+    c.open('other'); c.setDraft('other'); resolve({ comment: replyCreated('new-reply', 'nested') }); await sending;
+    assert.equal(c.state.draft, 'other'); assert.equal(owner.sending, false);
+    assert.equal(owner.threads.get('parent').confirmed.has('new-reply'), true); assert.equal(owner.confirmed.size, 0);
+    assert.deepEqual(owner.items.map(x => x.id), ['parent']);
+    assert.equal(payload.primaryCommentId, 'parent'); assert.equal(payload.replyToCommentId, 'nested');
+});
+
+test('missing target relationship disables send and never falls back to root', async () => {
+    let creates = 0;
+    const c = new CommentsController(async action => { if (action === 'comments.create') creates++; return page(['parent']); });
+    c.setSession(session()); c.open('ep'); await c.load(); c.selectReply('missing', 'parent'); c.setDraft('reply'); await c.submit();
+    assert.equal(creates, 0); assert.equal(c.state.replyTarget.id, 'missing'); assert.equal(c.state.replyTarget.valid, false);
+    assert.match(c.state.sendError, /刷新/); assert.equal(c.state.draft, 'reply');
+});
+
+test('target-invalid rejection preserves target draft and requires renewed evidence', async () => {
+    const c = new CommentsController(async action => { if (action === 'comments.create') throw new APIError({ code: 'COMMENT_TARGET_INVALID', message: 'target gone' }); return page(['parent']); });
+    c.setSession(session()); c.open('ep'); await c.load(); c.selectReply('parent'); c.setDraft('reply'); await c.submit();
+    assert.equal(c.state.uncertain, false); assert.equal(c.state.replyTarget.valid, false); assert.equal(c.state.draft, 'reply');
+    c.cancelReply(); assert.equal(c.state.draft, ''); c.selectReply('parent'); assert.equal(c.state.draft, 'reply');
+    await c.refreshTarget(); assert.equal(c.state.replyTarget.valid, true);
+});
+
+test('reply uncertainty refreshes its thread, stays target scoped and deduplicates confirmation', async () => {
+    const calls = []; let fail = true;
+    const c = new CommentsController(async (action, args) => {
+        calls.push({ action, args });
+        if (action === 'comments.create') { if (fail) throw new Error('lost'); return { comment: replyCreated() }; }
+        if (action === 'comments.thread') return { ...page([]), items: fail ? [] : [replyCreated()] };
+        return page(['parent']);
+    });
+    c.setSession(session()); c.open('ep'); await c.load(); c.selectReply('parent'); c.setDraft('reply'); await c.submit();
+    assert.equal(c.state.uncertain, true); await c.refreshTarget(); assert.equal(calls.at(-1).action, 'comments.thread');
+    c.cancelReply(); assert.equal(c.state.uncertain, false); c.selectReply('parent'); assert.equal(c.state.uncertain, true);
+    fail = false; await c.submit(true); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(c.state.threads.get('parent').confirmed.size, 0);
+    assert.deepEqual(c.state.threads.get('parent').items.map(x => x.id), ['new-reply']); assert.equal(c.state.confirmed.size, 0);
+});
+
+test('reply create with mismatched relation or after account change cannot enter a list', async () => {
+    let resolve;
+    const c = new CommentsController(async action => action === 'comments.create' ? new Promise(r => { resolve = r; }) : page(['parent']));
+    c.setSession(session()); c.open('ep'); await c.load(); c.selectReply('parent'); c.setDraft('reply');
+    const wrong = c.submit(); resolve({ comment: replyCreated('new', 'other') }); await wrong;
+    assert.equal(c.state.uncertain, true); assert.equal(c.state.draft, 'reply');
+    const late = c.submit(true); c.setSession(session(2, 'bob')); resolve({ comment: replyCreated() }); await late;
+    assert.equal(c.state.draft, ''); assert.equal(c.state.threads.size, 0);
 });
