@@ -12,7 +12,7 @@
 | Go / Node / Windows WebView2 | 工具链或宿主运行时 | 不随源码包分发 |
 | Chromium / Python Playwright | 本次测试环境 | 不作为客户端运行时分发 |
 
-`node scripts/dependency-report.mjs build/Starling-candidate.exe` 从实际二进制列出运行时 Go 模块，并另列 TypeScript 构建工具；本次共 19 项。`build/compliance/` 包含 CycloneDX SBOM、清单对应的根目录许可证/声明文本和待审状态。未把根许可证收集当作全部嵌套声明、媒体编解码运行时条款或专业许可审核。
+`node scripts/dependency-report.mjs build/Starling-candidate-r2.exe` 从实际二进制列出运行时 Go 模块，并另列 Go 运行时/工具链与 TypeScript 构建工具；本次共 20 项、63 份许可证/声明。生成前核对 Go 工具链与二进制记录的版本一致。`build/compliance/` 包含 CycloneDX SBOM、递归收集的源树许可证/NOTICE/COPYRIGHT/PATENTS、来源相对路径、逐文件 SHA-256 与待审状态；包括 WebView2/Wails 子目录原先遗漏的 4 份许可证。该集合包含供审查的源树材料，不代表每份文件都适用于最终二进制，也不替代媒体编解码/系统运行时条款或专业许可审核。
 
 2026-09-12 安全修复：Go 工具链锁定 1.26.8；x/net 0.56.0、x/text 0.39.0、x/sys 0.46.0、x/crypto 0.53.0。升级后的实际候选通过 govulncheck 1.8.0 二进制扫描；结果只针对当次漏洞库及文件，不宣称永久无漏洞。
 

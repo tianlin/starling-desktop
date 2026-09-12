@@ -16,7 +16,7 @@
 | 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
 | 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，13 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
 | 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
-| 依赖材料 | 实际二进制 18 个外部 Go 模块＋TypeScript 构建工具，共 19 项；CycloneDX 清单与根目录许可证/声明文本已生成，无缺失根许可证文本 |
+| 依赖材料 | 实际二进制 18 个外部 Go 模块＋Go 运行时/工具链＋TypeScript 构建工具，共 20 项；递归收集 63 份许可证/声明及文件哈希，没有组件缺少声明文本，适用性仍待专业审查 |
 | 独立代码检查 | 只读审查和离线 provider/app 测试通过；非 CodeRabbit 报告，未替代实机验收 |
 | 应用启动 | 历史版本曾创建主窗口；本次候选程序未启动，以免干扰用户桌面 |
 | 官方二维码接口 | 实际客户端成功创建二维码并取得 WAITTING 状态 |
@@ -61,6 +61,14 @@
 
 提交 `e0ab02d52bac00959e6122e71f7be37e30e7dbbd` 的 [CI 34677317958](https://github.com/tianlin/starling-desktop/actions/runs/34677317958) 全部成功，已包含 69 项核心测试、13 项前端测试和 Linux 合成浏览器回归。
 
+## 递归许可证材料与工具链一致性
+
+新增收集器测试覆盖嵌套相对路径、NOTICE/PATENTS、排除同名源码和 .git、拒绝目录链接。对实际 r2 候选生成的 63 份文件逐一核对 SHA-256，通过；重复生成通过。Go 运行时/工具链 component 使用与候选记录相同版本的 GOROOT，版本不一致会拒绝生成。Wails 与 WebView2 原先遗漏的 4 份子目录许可证均已纳入。
+
+这些材料是源树范围的审查集合，不能据此声称全部许可通过。原生系统 DLL、WebView2 和编解码运行时条款仍需单独评估。
+
+安装修复提交 `948dff17597e7ef3013c860c5ce665dc4e75e391` 的 [CI 34678084404](https://github.com/tianlin/starling-desktop/actions/runs/34678084404) 已全部成功，包括独立 Windows 安装测试、Linux 核心/浏览器测试与 Windows 构建/漏洞扫描。
+
 ## 历史合成测试
 
 较早的 Linux 环境记录：Go 1.23.2、Node.js 22.16.0、系统 SQLite；45 项核心测试及竞态检查、10 项前端测试、11 项 Chromium 合成浏览器检查通过。这些是历史结果，不代表后续新增代码全部经过相同浏览器或竞态检查。
@@ -74,7 +82,7 @@
 - 没有独立 CodeRabbit 报告。历史环境中 CLI 缺失、安装源解析失败；不把本地人工检查称作 CodeRabbit 审查。
 - GitHub Actions 的通过状态应以远端运行结果为准，配置文件存在不等于 CI 成功。
 - 托盘、媒体键、睡眠、设备切换、长时播放、安装卸载及不同 DPI 尚未完成完整实机验收。
-- 许可证文本已收集，但嵌套声明、运行时许可、专业审查、签名及平台接入边界仍需继续处理。
+- 根目录及嵌套声明、Go 运行时许可证已收集并核对哈希；具体适用条款、系统/编解码运行时许可、专业审查、签名及平台接入边界仍需继续处理。
 
 完整验收项见 [真实环境清单](REAL_ENVIRONMENT_CHECKLIST.md)，后续顺序见 [遗留工作](REMAINING_WORK.md)，扫码说明见 [QR_LOGIN.md](QR_LOGIN.md)。
 

@@ -1,16 +1,20 @@
 // Inventory the actual Go binary, not all test/tool modules in go.sum.
 // License texts are collected for review; this is not a legal approval.
 import { execFileSync } from 'node:child_process';
-import { readFile, readdir, mkdir, chmod, writeFile } from 'node:fs/promises';
+import { readFile, mkdir, chmod, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createHash, randomUUID } from 'node:crypto';
+import { licenseFiles } from './license-files.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const binary = path.resolve(root, process.argv[2] || 'build/Starling.exe');
 const out = path.join(root, 'build/compliance');
 const go = (args, cwd = root) => execFileSync('go', args, { cwd, encoding: 'utf8', windowsHide: true });
 const info = go(['version', '-m', binary]);
+const binaryGoVersion = /:\s+(go\S+)\s*$/.exec(info.split(/\r?\n/)[0])?.[1];
+const localGoVersion = go(['env', 'GOVERSION']).trim();
+if (!binaryGoVersion || binaryGoVersion !== localGoVersion) throw Error('Binary/Go runtime version mismatch; use the toolchain that built this binary.');
 const stream = go(['list', '-m', '-json', 'all'], path.join(root, 'desktop')).trim();
 const modules = JSON.parse(`[${stream.replace(/}\r?\n{/g, '},{')}]`);
 const indexed = new Map(modules.map(m => [m.Path, m]));
@@ -21,20 +25,22 @@ const checksum = createHash('sha256').update(await readFile(binary)).digest('hex
 async function collect(name, version, dir, purl, usage, sum) {
   const slug = `${name}@${version}`.replace(/[^a-zA-Z0-9_.-]/g, '_');
   const licenseDir = path.join(out, 'licenses', slug);
-  const files = dir ? (await readdir(dir, { withFileTypes: true })).filter(f =>
-    f.isFile() && /^(license|licence|copying|notice|thirdpartynoticetext)(\b|\.|_)/i.test(f.name)) : [];
-  const notices = [];
+  const files = dir ? await licenseFiles(dir) : [];
+  const notices = [], noticeDetails = [];
   for (const f of files) {
-    await mkdir(licenseDir, { recursive: true });
-    const destination = path.join(licenseDir, f.name);
+    const destination = path.join(licenseDir, f);
+    await mkdir(path.dirname(destination), { recursive: true });
     await chmod(destination, 0o600).catch(e => { if (e.code !== 'ENOENT') throw e; });
-    await writeFile(destination, await readFile(path.join(dir, f.name)));
-    notices.push(`licenses/${slug}/${f.name}`);
+    const contents = await readFile(path.join(dir, f));
+    await writeFile(destination, contents);
+    const file = `licenses/${slug}/${f}`;
+    notices.push(file);
+    noticeDetails.push({ source: f, file, sha256: createHash('sha256').update(contents).digest('hex') });
   }
   const properties = [{ name: 'starling:usage', value: usage }];
   if (sum) properties.push({ name: 'starling:go-module-sum', value: sum });
   components.push({ type: 'library', 'bom-ref': purl, name, version, purl, properties });
-  review.push({ name, version, usage, licenseFiles: notices,
+  review.push({ name, version, usage, licenseFiles: notices, notices: noticeDetails,
     reviewStatus: notices.length ? 'texts-collected-not-legally-reviewed' : 'manual-review-required' });
 }
 
@@ -49,6 +55,8 @@ for (const line of info.split(/\r?\n/)) {
 }
 for (const { name, version, mod, sum } of runtimeModules)
   await collect(name, version, mod.Dir, `pkg:golang/${name}@${version}`, 'runtime', sum);
+await collect('go', binaryGoVersion.slice(2), go(['env', 'GOROOT']).trim(),
+  `pkg:generic/go@${binaryGoVersion.slice(2)}`, 'compiled-runtime-and-toolchain');
 const lock = JSON.parse(await readFile(path.join(root, 'frontend/package-lock.json'), 'utf8'));
 const ts = lock.packages['node_modules/typescript'];
 await collect('typescript', ts.version, path.join(root, 'frontend/node_modules/typescript'),
@@ -64,6 +72,6 @@ await writeFile(path.join(out, 'sbom.cdx.json'), JSON.stringify({
 }, null, 2) + '\n');
 await writeFile(path.join(out, 'license-inventory.json'), JSON.stringify({
   binary: path.basename(binary), sha256: checksum, modules: review,
-  note: 'Root license/notice collection only. Review nested notices and platform/runtime terms before distribution.'
+  note: 'Recursive source-tree license/notice collection, including Go runtime/toolchain. This is a review superset, not a determination that every collected notice applies to the binary. Platform and codec runtime terms still require separate review.'
 }, null, 2) + '\n');
-console.log(`Inventory: ${components.length} components; ${review.filter(r => !r.licenseFiles.length).length} missing root license texts. Output: build/compliance/`);
+console.log(`Inventory: ${components.length} components; ${review.reduce((n, r) => n + r.licenseFiles.length, 0)} notice files; ${review.filter(r => !r.licenseFiles.length).length} components without notice texts. Output: build/compliance/`);
