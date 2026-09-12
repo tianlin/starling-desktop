@@ -4,7 +4,9 @@ export type PlayerState = 'idle' | 'resolving' | 'buffering' | 'playing' | 'paus
 export class Player {
     item: Item | null = null;
     state: PlayerState = 'idle';
-    error = '';
+    private mediaError = '';
+    private progressError = '';
+    get error() { return this.mediaError || this.progressError; }
     onPlayable: (it: Item) => void = () => { };
     onEnded: () => void = () => { };
     private serial = 0;
@@ -36,7 +38,7 @@ export class Player {
         this.listen('progress', () => this.applyInitialSeek());
         this.listen('playing', () => { if (this.resolved) {
             this.state = 'playing';
-            this.error = '';
+            this.mediaError = '';
             this.notify();
         } });
         this.listen('waiting', () => { if (this.resolved && !audio.paused) {
@@ -48,9 +50,17 @@ export class Player {
             this.save(false);
             this.notify();
         } });
-        this.listen('timeupdate', () => { if (!this.resolved)
-            return; this.savedPosition = audio.currentTime; if (Date.now() - this.lastSave >= 5000)
-            this.save(false); this.notify(); });
+        this.listen('timeupdate', () => {
+            if (!this.resolved)
+                return;
+            this.applyInitialSeek();
+            if (this.seekOnLoad > 0)
+                return;
+            this.savedPosition = audio.currentTime;
+            if (Date.now() - this.lastSave >= 5000)
+                this.save(false);
+            this.notify();
+        });
         this.listen('ended', () => {
             if (!this.resolved)
                 return;
@@ -71,18 +81,17 @@ export class Player {
                 return;
             }
             this.state = 'error';
-            this.error = '音频无法播放。可能是网络、格式或访问权限问题；请重试或打开官方页面。';
+            this.mediaError = '音频无法播放。可能是网络、格式或访问权限问题；请重试或打开官方页面。';
             this.notify();
         });
     }
     private applyInitialSeek() { if (this.seekOnLoad > 0 && this.seekable) {
         this.seek(this.seekOnLoad);
-        this.seekOnLoad = 0;
     } }
     private listen(name: string, fn: () => void) { const handler = fn as EventListener; this.audio.addEventListener(name, handler); this.listeners.push([name, handler]); }
     private notify() { if (!this.disposed)
         this.changed(); }
-    get position() { return this.resolved ? this.audio.currentTime : this.savedPosition; }
+    get position() { return this.resolved && this.seekOnLoad === 0 ? this.audio.currentTime : this.savedPosition; }
     get duration() { return this.resolved && Number.isFinite(this.audio.duration) ? this.audio.duration : this.savedDuration; }
     get seekable() { return this.resolved && this.audio.seekable.length > 0 && this.duration > 0; }
     restore(p: Progress) { this.item = p.item; this.itemEpoch = this.epoch(); this.savedPosition = p.ended ? 0 : p.position; this.savedDuration = p.duration; this.state = 'paused'; this.notify(); }
@@ -106,9 +115,11 @@ export class Player {
         this.item = it;
         this.itemEpoch = this.epoch();
         this.savedPosition = position ?? 0;
+        this.seekOnLoad = 0;
         this.savedDuration = it.duration ?? 0;
         this.state = 'resolving';
-        this.error = '';
+        this.mediaError = '';
+        this.progressError = '';
         this.notify();
         const epoch = this.itemEpoch;
         try {
@@ -142,7 +153,7 @@ export class Player {
             this.audio.pause();
             this.suppress = false;
             this.state = 'error';
-            this.error = e instanceof Error ? e.message : '播放失败。';
+            this.mediaError = e instanceof Error ? e.message : '播放失败。';
             this.notify();
             return false;
         }
@@ -165,37 +176,45 @@ export class Player {
             return;
         }
         if (this.resolved && this.state !== 'error' && this.state !== 'ended' && this.itemEpoch === this.epoch()) {
+            const seq = this.serial, requestID = this.requestID, epoch = this.itemEpoch;
             try {
                 await this.audio.play();
             }
             catch {
+                if (seq !== this.serial || requestID !== this.requestID || epoch !== this.epoch() || this.disposed)
+                    return;
                 this.state = 'paused';
-                this.error = '播放未获允许，请再点击播放。';
+                this.mediaError = '播放未获允许，请再点击播放。';
                 this.notify();
             }
         }
         else
             await this.play(this.item);
     }
-    seek(seconds: number) {
+    seek(seconds: number): boolean {
         if (!this.seekable || !Number.isFinite(seconds))
-            return;
+            return false;
         const target = Math.max(0, Math.min(seconds, this.duration));
         for (let i = 0; i < this.audio.seekable.length; i++) {
             if (target >= this.audio.seekable.start(i) && target <= this.audio.seekable.end(i)) {
                 try {
                     this.audio.currentTime = target;
                     this.savedPosition = target;
+                    // Keep an unreachable resume target until this assignment succeeds.
+                    // An explicit successful user seek also replaces that target.
+                    this.seekOnLoad = 0;
                     this.notify();
+                    return true;
                 }
                 catch { /* resource not seekable yet */ }
-                return;
+                return false;
             }
         }
+        return false;
     }
     jump(delta: number) { this.seek(this.position + delta); }
     private save(ended: boolean) {
-        if (!this.resolved || !this.item || this.disposed)
+        if (!this.resolved || !this.item || this.disposed || this.seekOnLoad > 0)
             return;
         const position = ended ? this.duration : this.position, duration = this.duration;
         if (!Number.isFinite(position) || position < 0 || !Number.isFinite(duration) || duration <= 0)
@@ -203,9 +222,16 @@ export class Player {
         this.lastSave = Date.now();
         const progress: Progress = { item: this.item, position: Math.min(position, duration), duration, ended, updatedAt: '' };
         const epoch = this.itemEpoch;
-        this.saveChain = this.saveChain.then(() => this.api('progress.save', { epoch, progress })).then(() => { }).catch(e => {
-            if (epoch === this.epoch() && !this.disposed) {
-                this.error = '收听进度未保存：' + (e instanceof Error ? e.message : '写盘失败。');
+        const requestID = this.requestID;
+        const current = () => epoch === this.epoch() && requestID === this.requestID && !this.disposed;
+        this.saveChain = this.saveChain.then(() => this.api('progress.save', { epoch, progress })).then(() => {
+            if (current() && this.progressError) {
+                this.progressError = '';
+                this.notify();
+            }
+        }).catch(e => {
+            if (current()) {
+                this.progressError = '收听进度未保存：' + (e instanceof Error ? e.message : '写盘失败。');
                 this.notify();
             }
         });
@@ -216,6 +242,7 @@ export class Player {
         ++this.serial;
         if (this.requestID)
             void this.api('playback.cancel', { epoch: this.itemEpoch, requestId: this.requestID }).catch(() => { });
+        this.requestID = '';
         this.suppress = true;
         this.resolved = false;
         this.audio.pause();
@@ -224,9 +251,11 @@ export class Player {
         this.suppress = false;
         this.item = null;
         this.savedPosition = 0;
+        this.seekOnLoad = 0;
         this.savedDuration = 0;
         this.state = 'idle';
-        this.error = '';
+        this.mediaError = '';
+        this.progressError = '';
         this.notify();
     }
     async dispose() { await this.persist(); this.pause(); this.disposed = true; for (const [n, f] of this.listeners)

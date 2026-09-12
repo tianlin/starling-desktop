@@ -8,11 +8,11 @@
 
 | 检查 | 结果与范围 |
 |---|---|
-| 根模块 go test -json -count=1 ./... | 78 个测试/子测试通过，3 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
+| 根模块 go test -json -count=1 ./... | 78 个测试/子测试通过，4 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
 | 根模块 go vet ./... | 通过 |
-| frontend 中 npm test | TypeScript 编译和 13 项 Node 测试通过 |
+| frontend 中 npm test | TypeScript 编译和 25 项 Node 测试通过 |
 | desktop 模块 go test ./... / go vet ./... | 通过编译与静态检查；宿主尚无专用测试文件 |
-| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r4 | 全流程通过，输出独立 Starling-candidate-r4.exe；跳过绑定生成，未启动应用 |
+| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r5 | 全流程通过，输出独立 Starling-candidate-r5.exe；跳过绑定生成，未启动应用 |
 | 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
 | 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，14 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
 | 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
@@ -37,7 +37,7 @@
 
 新增回归覆盖设备 UUID 每客户端稳定且相互独立、不伪装手机、私有库末页规则、异常分页不被覆盖、嵌套错误进入诊断、错误时保留缓存、内存缓存过期和缓存文案。
 
-候选文件 `build/Starling-candidate-r4.exe` SHA-256：`0a1dab619678be4439b195689617728efe9520a7a27bd13867aa78609ddcdc25`。
+候选文件 `build/Starling-candidate-r5.exe` SHA-256：`803728f999b320a5138e79457a95ba5b15b5d540fab30e2972593e5b93d02638`。
 
 本机证据位于 `build/core-tests.jsonl`、`build/vulnerabilities-after.txt`、`build/compliance/`、`docs/test-results/`（均为不提交的构建/测试产物）。不提交真实账号响应。
 
@@ -86,6 +86,24 @@
 手工复查：设置 STARLING_LIVE_PUBLIC_URL 为获准检查的官方公开链接，再运行 `go test -v ./internal/provider -run ^TestLivePublicShare$ -count=1`，结束后移除环境变量。该测试默认跳过，不读 vault，不访问账号 API，不进行续期；日志仅记录结构字段和计数。证据位于 build/live-public-check.txt 和 build/live-public-second-check.txt，不提交网页正文或媒体地址。r4 完整构建和漏洞扫描通过，依赖材料已按 r4 重新生成。
 
 弹窗修复提交 `47e32b952a0af54814aeca6554bb8d7abf349df9` 的 [CI 34678680790](https://github.com/tianlin/starling-desktop/actions/runs/34678680790) 已全部通过。
+
+## 续播、进度保存与迟到播放错误
+
+修复部分缓冲范围导致的续播丢失：保存位置为 42 秒、初始 seekable 只有 0～10 秒时保留目标，范围扩大后再定位；currentTime 暂时拒绝赋值也保留目标。等待期间的 timeupdate、暂停和持久化请求不会将旧检查点覆盖成从零播放的位置。显式成功定位会取代尚未完成的自动续播。
+
+进度错误与媒体错误分开保存；成功写入检查点只清除进度错误，playing 事件不会假装写盘已恢复。保存结果绑定账号和播放请求，旧选择的迟到失败不会污染新选择。toggle 恢复播放的迟到拒绝同样核对播放代次、请求、账号和销毁状态；切歌、清空或账号变化后保持当前状态。
+
+新增 12 项前端回归，其中 10 项先复现旧实现失败，再随修复通过；另两项守护媒体错误与账号隔离。25 项前端测试、78 项核心测试、14 项合成浏览器回归和 r5 完整候选构建通过；独立只读复核的 19 项播放器测试通过。r5 漏洞扫描无命中，20 项组件及 63 份声明已重新生成。没有启动候选或操作用户桌面。
+
+## 匿名真实媒体 Range 探测
+
+2026-09-12 对上述两个公开单集分别请求 bytes=0-15 和 bytes=1024-1039。第一个返回 audio/mp4、总长度 19766365；第二个返回 audio/mpeg、总长度 9384773。四次响应均为 206，Content-Range 起止与请求匹配，同一样本总长度一致，每次实际读取 16 字节，共 64 字节。没有播放或下载完整音频，也没有使用账号、Cookie、vault 或令牌。
+
+手动测试：设置 STARLING_LIVE_MEDIA_URL 为获准检查的官方公开单集链接，运行 `go test -v ./internal/provider -run ^TestLivePublicMediaRange$ -count=1` 后移除开关。测试默认跳过，使用现有媒体白名单、公共 IP 限制和禁止重定向的客户端；总超时 45 秒，单次最多读取 17 字节，日志不含媒体 URL、正文或原始网络错误。200 响应仅记录不支持 Range 并限量关闭，这两个真实样本未触发该分支。
+
+此结果只证明这两个来源当时的匿名范围响应，不证明 AAC/MP3 解码、原生 WebView2、长时播放或所有 CDN 行为。脱敏日志位于 build/live-media-sample-1.log 与 build/live-media-sample-2.log，不提交。
+
+公开页面修复提交 `287e6401cd94588fa53b5d4c850a57017e9e3787` 的 [CI 34678959067](https://github.com/tianlin/starling-desktop/actions/runs/34678959067) 已全部通过；后续修改的远端结果另行核对。
 
 ## 历史合成测试
 
