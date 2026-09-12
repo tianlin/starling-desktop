@@ -28,7 +28,6 @@ __pycache__/
 *.pcapng
 webview-cache/
 /frontend/package.json.md5
-/desktop/build/windows/wails.exe.manifest
 /docs/superpowers/
 /docs/test-results/
 /SOURCE_VERSION.json

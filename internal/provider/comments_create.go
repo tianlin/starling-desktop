@@ -62,10 +62,6 @@ func commentUncertain() error {
 	return model.Err("COMMENT_UNCERTAIN", "发表结果未确认，请刷新评论或在官方客户端核对；不会自动重发。")
 }
 
-func decodeCreatedComment(b []byte, episodeID string) (model.Comment, error) {
-	return decodeCreatedCommentTarget(b, episodeID, "", "")
-}
-
 func decodeCreatedCommentTarget(b []byte, episodeID, replyToCommentID, primaryCommentID string) (model.Comment, error) {
 	var env map[string]json.RawMessage
 	bad := func() (model.Comment, error) {

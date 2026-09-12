@@ -1,4 +1,4 @@
-name: Development checks (not release acceptance)
+name: CI
 on:
   push:
   pull_request:
@@ -73,10 +73,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node scripts/dependency-report.mjs build/Starling.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Upload unsigned development candidate (not a release)
+      - name: Upload Windows build and dependency notices
         uses: actions/upload-artifact@v7.0.1
         with:
-          name: starling-unsigned-development-candidate
+          name: starling-windows-x64
           path: |
             build/Starling.exe
             build/SHA256SUMS.txt

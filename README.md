@@ -1,140 +1,97 @@
 # Starling · 星听
 
-面向 **Windows 11 x64** 的非官方小宇宙桌面客户端开发版。
+面向 **Windows 11 x64** 的非官方小宇宙桌面客户端，当前版本 **0.2.0**。支持个人库、订阅更新、探索、评论与本机连续收听，提供便携程序和当前用户安装脚本。
 
-**版本：0.1.0-alpha.1。交付的是源码、已构建前端、测试与构建脚本，不是已经过真实账号和 Windows 实机验收的安装包。**
-
-独立界面，Go 核心 + Wails 2 宿主 + TypeScript + SQLite。没有项目方服务器；不复制 Horizon 的 GPL 代码。原创代码采用 MIT，平台内容与商标不在该许可证授权范围内。
+独立界面采用 Go + Wails 2 + TypeScript + SQLite，没有项目方账号服务器。原创代码采用 MIT；平台内容与商标不在该许可证授权范围内。本版本未签名，未经过外部安全审计；验证证据和实机边界分别见 [测试报告](docs/TEST_REPORT.md) 和 [后续验证](docs/REMAINING_WORK.md)。
 
 ![收藏列表：明确标记的合成测试环境](docs/screenshots/favorites.png)
 
-## 已实现与尚未验证
+## 功能
 
-| 模块 | 当前情况 |
-|---|---|
-| 短信登录、身份核对、会话续期 | 提供小宇宙 App 扫码与实验短信适配器；真实扫码完成后的个人库访问尚未完成验收，默认关闭 |
-| 订阅 / 收藏单集 | 独立列表、分页、去重、取消、完整缓存替换；真实接口的当前兼容性待验证 |
-| 订阅更新 | 独立更新流、日期分组、快捷播放/稍后听、详情返回、逐页加载与近期缓存；真实只读两页通过，完整历史与原生界面仍待验收，见 [订阅更新说明](docs/SUBSCRIPTION_UPDATES.md) |
-| 探索与订阅 | 搜索节目、单集、主播/用户；搜索历史、平台推荐搜索词、创作者作品、账号订阅及待确认结果核对。三类真实搜索各两页、创作者作品和订阅状态只读验证通过；真实订阅写入与原生交互待用户主动验收，见 [探索说明](docs/DISCOVERY.md) |
-| 公开链接 / 详情 | 仅支持小宇宙完整节目或单集链接；公开网页 JSON 解析、说明清洗、时间点跳转 |
-| 评论 | 登录后在单集详情切换“评论”，按“热门 / 最新”分页阅读、展开回复、发表文字评论、回复一级及楼中楼评论；两种排序通过真实只读检查，发表及回复仅通过合成测试、待用户主动验收；回复分页边界见 [评论契约](docs/COMMENTS_API.md) |
-| 播放 | 单一 audio、切歌竞态保护、暂停、进度拖动、±15/30 秒、倍速、音量；合成 WAV 浏览器测试通过 |
-| 本地状态 | 书签、待播队列、断点续播、账号隔离；重启不自动播放 |
-| Windows 原生 | 托盘、媒体键、睡眠暂停、用户级 DPAPI、系统 SQLite、单实例锁已编写；独立模块交叉编译通过，**未实机执行** |
-| 完整 Wails 程序 | 已在 Windows x64 完成构建并启动主窗口；完整账号与播放验收仍待完成 |
-| 安装 / 更新 | 提供便携构建、当前用户安装与卸载脚本；没有签名、自动更新或应用商店分发 |
+| 功能 | 使用范围 |
+| --- | --- |
+| 账号接入 | 小宇宙 App 扫码、身份核对、会话续期和可选本机保存；默认关闭，需用户启用。保留兼容性有限的短信路径 |
+| 我的订阅 / 收藏单集 | 分页、去重、已加载内容筛选、可取消的加载全部；完整列表缓存与账号隔离 |
+| 订阅更新 | 日期分组、播放、稍后听、逐页加载和近期缓存；见 [订阅更新说明](docs/SUBSCRIPTION_UPDATES.md) |
+| 探索 | 搜索节目、单集和用户，推荐词、搜索历史、创作者作品、主动订阅及结果核对；见 [探索说明](docs/DISCOVERY.md) |
+| 公开链接 / 详情 | 完整节目或单集链接、清洗后的说明和时间点；公开节目页可能只提供部分单集 |
+| 评论 | 登录后按热门 / 最新阅读、展开回复、发表文字及回复；最新采用服务器 TIME 顺序，不保证跨样本严格时间降序。见 [评论契约](docs/COMMENTS_API.md) |
+| 播放与本地状态 | 播放暂停、拖动、后退 15 秒 / 前进 30 秒、倍速、音量、书签、队列、断点续播；重启不自动播放 |
+| Windows 集成 | 托盘、媒体键、睡眠暂停、单实例、用户级 DPAPI 和系统 SQLite；不同设备及 WebView2 的验证边界见测试报告 |
 
-### 必须理解的账号边界
+## 开始使用
 
-当前认证适配器支持官方网页使用的**小宇宙 App 扫码流程**及社区记录的主播后台短信接口，随后用听众个人资料接口重新核对身份。扫码实现与验证边界见 [扫码登录说明](docs/QR_LOGIN.md)。旧短信实现未包含当前官方网页的人机验证流程，可能无法发送。它不是已获得授权的 OAuth 接入，也不保证主播后台凭据可用于每个听众账号。第三方接入可能被拒绝、失效或触发风控；不能把技术实现当成平台许可。
+运行 `build/Starling.exe`，或按下方步骤安装。公开链接和本地书签可在访客模式使用；个人库、探索和评论需要在设置中启用“账号接入”，再使用小宇宙 App 扫描二维码。凭据仅在本机处理，保存会话是可选项。
 
-该开发版不伪造移动设备指纹，不绕过验证码、访问控制或付费限制，不扫描浏览器 / App 的已有会话，不使用公共第三方账号代理。若平台拒绝访问，客户端明确报错，不进行无限重试或把失败显示成空收藏。
+扫码采用官方网页现有流程，并重新核对听众身份，详见 [扫码说明](docs/QR_LOGIN.md)。这不是平台提供给本项目的 OAuth 授权；私有接口可能变化、拒绝访问或触发风控。短信路径缺少当前网页所需的人机验证参数，可能无法发送。客户端不伪造移动设备指纹，不绕过验证码、付费限制或访问控制，也不读取其他应用会话。
 
-**PRD 的 G1、G2、G3 仍未全部通过，因此本版本不能作为“已完成的账号版 MVP”公开宣传。** 见 [需求映射](docs/PRD_TRACEABILITY.md) 和 [真实环境验收清单](docs/REAL_ENVIRONMENT_CHECKLIST.md)。
+发表评论、回复和订阅须由用户主动操作。请求结果不确定时，先刷新或在官方客户端核对，再决定是否重试；自动测试没有执行真实评论或订阅写入。
 
-## 在 Windows 上构建
+## Windows 构建
 
-前提：64 位 Windows 11，Go、Node.js/npm，以及可使用的 WebView2 运行时。构建脚本需要访问 Go 模块和 npm 源，不会关闭 TLS / 校验数据库，也不会改变系统脚本执行策略。
-
-语言下限由 `go.mod` 声明为 Go 1.26.0，项目工具链与 CI 配置固定 Go 1.26.8；本轮 Windows 验证使用 Go 1.26.8 / Node 24.5.0。Wails 固定为 **2.11.0**，TypeScript 固定为 **5.8.3**，前端有实际生成的 `package-lock.json`。这些是开发基线，不是完成安全审计后的公开发布工具链。
-
-从项目根目录执行：
+需要 Windows 11 x64、Go **1.26.8**（语言下限 1.26.0）、Node.js/npm 和 WebView2。Wails 固定 **2.11.0**，TypeScript 固定 **5.8.3**。在根目录执行：
 
 ```powershell
 powershell -NoProfile -File .\scripts\build-windows.ps1
 ```
 
-项目要求 Go 1.26.0 以上，工具链锁定 1.26.8。脚本在临时双模块 workspace 中下载并校验依赖，分别运行根模块和宿主的测试/静态检查及前端测试，再构建程序。成功后输出到 `build\Starling.exe`，并生成 SHA-256 清单。两个模块的实际 `go.sum` 均已纳入源码。常规构建前请退出 Starling，避免绑定生成触发单实例检查。
+脚本通过临时双模块 workspace 校验依赖，分别检查根模块和 `desktop/` 宿主、测试前端，再构建 `build/Starling.exe` 和 SHA-256 清单。常规构建前退出 Starling，避免绑定生成触发单实例检查。
 
-需要保持当前程序运行、避免桌面被打扰时，可使用 `powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate`。它跳过绑定生成、输出 `build\Starling-candidate.exe` 和独立哈希清单，不启动、关闭或替换现有程序。如果默认候选也在运行，可追加 `-CandidateName Starling-candidate-r2`，生成另一个文件和独立哈希清单；脚本仍拒绝覆盖运行中的同名目标。当前 JSON `Call` 桥签名未变；修改宿主绑定签名后，应在方便时执行常规构建验证。
+需要保留当前程序运行时，使用独立候选构建：
 
-脚本执行受组织策略限制时，按组织批准方式执行，不需要为了使用项目而关闭系统安全功能。也可以逐条运行相同命令：
+```powershell
+powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate -CandidateName Starling-candidate-020
+```
+
+候选构建跳过绑定生成，输出独立 EXE 和哈希，不启动或替换现有程序，并拒绝覆盖运行中的同名目标。修改宿主绑定签名后需补做常规构建。
+
+脚本受组织策略限制时，按组织批准方式执行，或逐条运行以下命令，无需关闭执行策略：
 
 ```powershell
 $env:CGO_ENABLED = "0"
 go test ./...
 go vet ./...
-cd frontend
-npm ci --ignore-scripts
-npm test
-cd ../desktop
+Set-Location frontend
+npm.cmd ci --ignore-scripts
+npm.cmd test
+Set-Location ../desktop
 go test ./...
 go vet ./...
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.11.0 build -platform windows/amd64 -clean
 ```
 
-上面的手工构建默认输出在 `desktop/build/bin/`；构建脚本会额外复制到根目录 `build/`。直接双击便携程序即可启动，不要求安装。请先审查源码和发布边界，再决定是否启用实验账号接入。
+手工构建输出位于 `desktop/build/bin/`。依赖校验入口为 `scripts/verify-dependencies.ps1`；测试及发布物检查见 [测试报告](docs/TEST_REPORT.md)。
 
-### 当前用户安装 / 卸载
+## 安装与卸载
 
 ```powershell
 powershell -NoProfile -File .\scripts\install.ps1
 powershell -NoProfile -File .\scripts\uninstall.ps1
-# 明确选择同时删除用户数据：
+# 同时删除用户数据：
 powershell -NoProfile -File .\scripts\uninstall.ps1 -RemoveData
 ```
 
-安装位置：`%LOCALAPPDATA%\Programs\Starling`。数据位置：`%APPDATA%\Starling`。脚本拒绝在 Starling 或候选版运行时安装/卸载，不自动结束进程。升级先暂存新文件，再原子替换程序；文件占用导致失败时保留旧版本。环境目录必须是绝对路径，安装/卸载范围内存在目录链接或重解析点时会停止。默认卸载保留数据；`-RemoveData` 才会清除。运行中的 WebView 缓存以退出后 / 下次启动时的尽力清理为界，不承诺取证级擦除。
+安装到 `%LOCALAPPDATA%\Programs\Starling`，数据位于 `%APPDATA%\Starling`。安装和卸载前退出 Starling 及候选版；脚本不自动结束进程。升级采用暂存后原子替换，文件占用时保留旧版；目录必须为绝对路径，目标范围内有重解析点时停止。默认卸载保留数据。当前没有自动更新、代码签名或应用商店分发。
 
-## 运行合成演示，不连接真实账号
+## 合成演示与开发
 
-演示是独立的 `cmd/demo`，不会被桌面生产入口引用。其账号、列表和 120 秒低音量测试音频均为合成数据；测试数据只存在临时目录中，正常退出后删除。
-
-```sh
-cd frontend
-npm ci --ignore-scripts
-npm run build
-cd ..
+```powershell
+Set-Location frontend
+npm.cmd ci --ignore-scripts
+npm.cmd run build
+Set-Location ..
 go run ./cmd/demo
 ```
 
-在浏览器打开 `http://127.0.0.1:34115/`。页面顶部始终有演示标记。可以用 `00000000000` / `0000` 测试表单，不会发送真实短信。Linux 运行该演示需要 GCC 与 `libsqlite3-dev`；Windows 使用系统 SQLite，无需 C 编译器。仅打开 `frontend/dist/index.html` 不会自动连接后端。
+在浏览器打开 `http://127.0.0.1:34115/`。演示明确标记合成环境，使用临时数据与短测试音频，表单可输入 `00000000000` / `0000`，不会发送真实短信。桌面生产入口不引用演示；直接打开前端 HTML 不会连接后端。Linux 演示及测试需要 GCC 与 `libsqlite3-dev`；Windows 使用系统 SQLite。
 
-## 测试
+| 目录 | 职责 |
+| --- | --- |
+| `internal/app/` | 业务编排与受限 JSON 桥 |
+| `internal/provider/`、`internal/session/` | 平台适配、认证与会话 |
+| `internal/store/`、`internal/sqlite/`、`internal/security/` | 本地数据、系统数据库与安全边界 |
+| `internal/desktop/`、`desktop/` | Windows 原生集成、独立 Wails Go 模块及内嵌前端 |
+| `frontend/src/` | 原生 DOM TypeScript 界面和唯一播放器 |
+| `cmd/demo/`、`tests/e2e/` | 合成演示与浏览器回归 |
 
-```sh
-go test ./...             # 根模块，联网测试默认跳过
-go test -race ./...       # 需要支持 CGo 的工具链；历史 Linux 结果不代表当前 Windows 已执行
-go vet ./...
-cd frontend && npm test   # 严格 TypeScript 编译 + Node 内置测试
-```
-
-浏览器集成测试先执行 `python -m pip install -r tests/e2e/requirements.txt` 和 `python -m playwright install chromium`，然后在根目录运行 `python tests/e2e/run.py`。可设置 `CHROMIUM_PATH` 指向浏览器；默认使用 Playwright 安装的 Chromium。测试使用 headless、静音和独立临时配置，不操作用户浏览器；截图与结果保存在 `docs/test-results/`。本次 Windows Headless Chrome 直接连接本机合成后端，16 项通过；其中 2 项取消竞态使用 HTTP 响应拦截，另 1 项验证页面重载，仅在直连模式运行；历史受控内存测试路径可通过 `STARLING_E2E_IN_MEMORY=1` 使用。两者均**不等于原生 Wails / WebView2 实机测试**。
-
-同一环境运行 `python tests/e2e/media.py` 可验证真实 Player 对 MP3、M4A/AAC LC、AAC/ADTS 的 HTTP Range 与非 Range 行为，共 6 组。测试使用仓库内离线生成的短静音样本，无须额外安装编码器；包括不可定位提示、保存旧续播点及自然播放追平后的恢复。结果写入 `docs/test-results/media.json`，已接入 CI。这些短合成音频不替代 WebView2、真实 CDN 或长时播放验收。
-
-`python tests/e2e/media_failures.py` 另有 4 组真实浏览器媒体错误回归：本地受控 403、仅重新解析一次、第二次失败停止，以及重解析期间暂停/切歌。使用实际 Player 与静音样本，结果写入 `docs/test-results/media-failures.json`，已接入 CI；不使用真实账号，不代表账号令牌续期验收。
-
-经明确授权后，可单独进行真实库只读检查：设置 `$env:STARLING_LIVE_LIBRARY='1'` 后运行 `go test ./internal/provider -run '^TestLiveLibraryReadOnly$' -v -count=1`，完成后移除该环境变量。只读本应用自己的受保护会话，不续期或写回凭据；输出页数和条数，不输出账号或内容。本次真实收藏/订阅分页已通过，手机端核对仍待完成。
-
-评论浏览器回归运行 `python tests/e2e/comments.py`，只连接本机合成提供方。真实评论只读检查需明确启用 `$env:STARLING_LIVE_COMMENTS='1'`，运行 `go test ./internal/provider -run '^TestLiveCommentsReadOnly$' -v -count=1`，结束后移除变量；不续期、不写回、不发表。真实发表评论由用户在界面主动填写和点击：失败保留草稿，结果未确认时先刷新或在官方客户端核对，再明确选择清除草稿或重新发送。草稿仅在进程内按账号/单集/回复目标保存，切换热门/最新共用草稿，退出账号后清除。
-
-发布前检查实际候选文件：
-
-```powershell
-go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary build/Starling-candidate.exe
-node scripts/dependency-report.mjs build/Starling-candidate.exe
-```
-
-依赖材料保存在 `build/compliance/`，包括 CycloneDX 清单与许可证文本。脚本校验候选二进制与当前依赖版本一致；许可证收集不代替专业审查。最新证据见 [测试报告](docs/TEST_REPORT.md)，全部遗留项见 [遗留工作](docs/REMAINING_WORK.md)。
-
-## 目录
-
-```text
-internal/app/        业务编排与受限 JSON 桥
-internal/provider/   实验平台适配、公开页面、分页契约
-internal/session/    令牌轮换、single-flight、会话 epoch
-internal/store/      参数化 SQLite、按账号隔离的本地数据
-internal/sqlite/     Windows 系统 DLL / Linux cgo 薄绑定
-internal/security/   URL 校验、DPAPI、原子凭据存储
-internal/desktop/    原生托盘 / 媒体键 / 生命周期
-frontend/src/        无第三方运行时的 TypeScript 界面与播放器
-desktop/             独立 Wails Go 子模块及内嵌前端
-cmd/demo/            仅合成数据的本地演示入口
-tests/e2e/           浏览器集成测试
-docs/                PRD、实现说明、验证证据与未完成项
-```
-
-公开发布前请先阅读 [SECURITY.md](SECURITY.md)、[隐私说明](PRIVACY.md) 和 [第三方参考与许可](THIRD_PARTY_NOTICES.md)。本仓库未替你创建或推送任何远程 GitHub 项目。
-
-安装脚本回归：`powershell -NoProfile -File .\scripts\test-installation.ps1`。7 项检查仅使用临时目录和合成文件，覆盖安装/升级、文件占用、候选进程保护、链接拒绝与数据保留/删除；不安装或启动真实应用。Windows CI 自动执行此检查。
+继续阅读：[贡献指南](CONTRIBUTING.md)、[产品范围](docs/PRD.md)、[架构](docs/ARCHITECTURE.md)、[安全](SECURITY.md)、[隐私](PRIVACY.md)、[第三方许可](THIRD_PARTY_NOTICES.md)。

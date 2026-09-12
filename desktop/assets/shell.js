@@ -27,7 +27,6 @@ export class Application {
     displayPage = 0;
     allLoading = false;
     loading = false;
-    alive = true;
     saveSettingsChain = Promise.resolve();
     lastMediaID = '';
     libraryGeneration = 0;
@@ -247,7 +246,7 @@ export class Application {
         const s = this.boot.session;
         const nick = s.identity?.nickname ?? '访客模式';
         document.querySelector('#account-name').textContent = nick;
-        document.querySelector('#account-caption').textContent = s.state === 'connected' ? '实验接入 · 已连接' : s.state === 'needs_login' ? '会话失效 · 请重新连接' : '连接你的个人播客库';
+        document.querySelector('#account-caption').textContent = s.state === 'connected' ? '账号已连接' : s.state === 'needs_login' ? '会话失效 · 请重新连接' : '连接你的个人播客库';
         document.querySelector('.avatar').textContent = nick.slice(0, 1);
         document.querySelector('#top-account').textContent = s.identity ? '账号与连接' : '连接账号';
         this.drawPlayer();
@@ -693,7 +692,7 @@ export class Application {
         hero.append(text);
         this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), ...(this.discoveryReturn ? [this.discoveryBack()] : []), hero);
         if (it.restricted)
-            this.page.append(el('p', 'inline-warning', it.restriction || '此内容受限，首版不支持付费或私有内容。'));
+            this.page.append(el('p', 'inline-warning', it.restriction || '此内容受限，暂不支持付费或私有内容。'));
         const notes = renderNotes(it.showNotes || it.description || '暂无说明。', seconds => {
             if (this.player.item?.id !== it.id) {
                 this.notice('先播放当前单集，再点击时间点跳转。');

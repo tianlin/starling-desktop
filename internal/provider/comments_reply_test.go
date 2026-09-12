@@ -103,7 +103,7 @@ func TestReplyCommentWrongResponseIsUncertain(t *testing.T) {
 			t.Fatalf("bad response: %v", e)
 		}
 	}
-	if _, e := decodeCreatedComment([]byte(`{"data":`+replyFixture(commentID)+`}`), commentEpisode); e == nil {
+	if _, e := decodeCreatedCommentTarget([]byte(`{"data":`+replyFixture(commentID)+`}`), commentEpisode, "", ""); e == nil {
 		t.Fatal("root create accepted reply")
 	}
 }

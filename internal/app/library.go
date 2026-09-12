@@ -150,7 +150,7 @@ func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode str
 	defer requestCancel()
 	var page model.Page
 	if snap.State == "connected" {
-		_, e = s.session.Do(requestCtx, func(c context.Context, token string) error {
+		_, e = s.session.DoAt(requestCtx, epoch, func(c context.Context, token string) error {
 			var er error
 			page, er = s.p.List(c, token, kind, pid, cursor)
 			return er

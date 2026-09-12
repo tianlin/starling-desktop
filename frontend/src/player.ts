@@ -88,7 +88,7 @@ export class Player {
             const code = audio.error?.code;
             if (['playing', 'buffering'].includes(this.state) && !this.retried && (code === 2 || code === 4) && this.item) {
                 this.retried = true;
-                void this.start(this.item, false, this.seekOnLoad || this.position);
+                void this.start(this.item, this.seekOnLoad || this.position);
                 return;
             }
             this.state = 'error';
@@ -126,8 +126,8 @@ export class Player {
         return false;
     }
     restore(p: Progress) { this.item = p.item; this.itemEpoch = this.epoch(); this.savedPosition = p.ended ? 0 : p.position; this.savedDuration = p.duration; this.state = 'paused'; this.notify(); }
-    async play(it: Item): Promise<boolean> { this.retried = false; return this.start(it, true); }
-    private async start(it: Item, manual: boolean, position?: number): Promise<boolean> {
+    async play(it: Item): Promise<boolean> { this.retried = false; return this.start(it); }
+    private async start(it: Item, position?: number): Promise<boolean> {
         if (this.disposed)
             return false;
         this.save(this.state === 'ended');

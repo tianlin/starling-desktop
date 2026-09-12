@@ -231,7 +231,7 @@ func main() {
 	}
 	a := &App{service: service}
 	e = wails.Run(&options.App{
-		Title: "Starling · 星听（非官方 Alpha）", Width: 1240, Height: 840, MinWidth: 900, MinHeight: 650,
+		Title: "Starling · 星听 " + app.Version + "（非官方）", Width: 1240, Height: 840, MinWidth: 900, MinHeight: 650,
 		AssetServer: &assetserver.Options{Assets: ui, Middleware: middleware}, Bind: []interface{}{a},
 		OnStartup: a.startup, OnBeforeClose: a.beforeClose,
 		OnShutdown: func(ctx context.Context) {

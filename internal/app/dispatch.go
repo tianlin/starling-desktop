@@ -53,11 +53,8 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 	}
 	if diagnosticError != nil {
 		safeAction := action
-		if len(safeAction) > 40 {
-			safeAction = "unknown"
-		}
 		switch action {
-		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create", "discovery.suggestions", "discovery.search", "discovery.creator", "discovery.history", "subscription.add", "subscription.status":
+		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.cancelLogin", "account.qrStart", "account.qrPoll", "account.qrCancel", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create", "discovery.suggestions", "discovery.search", "discovery.creator", "discovery.history", "subscription.add", "subscription.status":
 		default:
 			safeAction = "unknown"
 		}

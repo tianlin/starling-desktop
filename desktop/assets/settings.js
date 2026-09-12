@@ -70,12 +70,12 @@ export function showAccount(app) {
         body.append(el('p', '', `当前账号：${app.boot.session.identity.nickname}`), el('p', 'muted', `连接状态：${app.boot.session.state}。退出仅清除此客户端的会话与账号本地数据，不会删除小宇宙账号。`), button('退出并清除本机账号数据', () => app.logout().catch(e => app.notice(e)), 'button danger'));
         return;
     }
-    body.append(el('div', 'inline-warning', '实验性账号接入：推荐使用小宇宙 App 扫码。扫码确认后还需核对听众身份；个人库兼容性仍需实测。旧短信接口未包含当前官方网页验证流程，可能无法发送。'));
+    body.append(el('div', 'inline-warning', '账号接入使用非官方接口，可能因平台变更或风控暂时不可用。推荐使用小宇宙 App 扫码，确认后将核对听众身份。旧短信接口可能无法发送验证码。'));
     const risk = el('label', 'check-row');
     const check = el('input');
     check.type = 'checkbox';
     check.checked = app.boot.settings.experimentalAccount;
-    risk.append(check, el('span', '', '我已了解上述风险，启用实验性账号接入'));
+    risk.append(check, el('span', '', '我已了解上述风险，启用账号接入'));
     body.append(risk);
     const form = el('form');
     const phone = input('手机号', 'tel', '输入你的手机号');
@@ -108,7 +108,7 @@ export function showAccount(app) {
     let loginEpoch;
     const enable = async () => {
         if (!check.checked)
-            throw Error('请先确认实验接入风险。');
+            throw Error('请先阅读并确认账号接入风险。');
         app.boot.settings.experimentalAccount = true;
         await app.saveSettings();
     };
@@ -243,7 +243,7 @@ export function showSettings(app) {
     enabled.type = 'checkbox';
     enabled.checked = app.boot.settings.experimentalAccount;
     enabled.disabled = !!app.boot.session.identity;
-    enabled.setAttribute('aria-label', '实验性账号接入');
+    enabled.setAttribute('aria-label', '账号接入');
     enabled.addEventListener('change', () => {
         if (enabled.checked) {
             enabled.checked = false;
@@ -253,7 +253,7 @@ export function showSettings(app) {
         app.boot.settings.experimentalAccount = false;
         void app.saveSettings().catch(e => app.notice(e));
     });
-    section('实验性账号接入', '默认关闭。启用前阅读账号风控与非官方接口风险。连接后可查看评论；点击“发表评论”会以当前账号发送公开评论。', enabled);
+    section('账号接入', '默认关闭。启用前阅读账号风控与非官方接口风险。连接后可查看评论；点击“发表评论”会以当前账号发送公开评论。', enabled);
     section('恢复已保存会话', '只读取本应用自身的受保护凭据，不读取其他应用或浏览器的登录状态。', button('尝试恢复', () => { void call('account.restore').then(() => app.reload()).then(() => app.navigate('settings')).catch(e => app.notice(e)); }));
     const close = el('select');
     close.setAttribute('aria-label', '关闭窗口行为');

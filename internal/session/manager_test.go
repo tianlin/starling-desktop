@@ -185,6 +185,13 @@ func TestReplaySnapshotRejectsChangedEpoch(t *testing.T) {
 	if _, e := m.connectedSnapshot(old); !model.IsCode(e, "STALE_SESSION") {
 		t.Fatal(e)
 	}
+	called := false
+	if _, e := m.DoAt(context.Background(), old, func(context.Context, string) error {
+		called = true
+		return nil
+	}); !model.IsCode(e, "STALE_SESSION") || called {
+		t.Fatalf("old epoch callback called=%v, err=%v", called, e)
+	}
 }
 
 type delayedLoadVault struct {

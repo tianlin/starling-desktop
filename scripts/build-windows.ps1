@@ -36,7 +36,8 @@ try {
         Push-Location "desktop"
         try {
             if (-not $SkipTests) { Run-Checked "go" @("test", "./..."); Run-Checked "go" @("vet", "./...") }
-            $BuildArgs = @("run", "github.com/wailsapp/wails/v2/cmd/wails@v2.11.0", "build", "-platform", "windows/amd64", "-o", "$Name.exe")
+            # The frontend was already built and tested above.
+            $BuildArgs = @("run", "github.com/wailsapp/wails/v2/cmd/wails@v2.11.0", "build", "-s", "-platform", "windows/amd64", "-o", "$Name.exe")
             # Candidate builds keep the stable Call bridge and never launch the
             # binding helper, which otherwise executes main and steals focus.
             if ($Candidate) { $BuildArgs += "-skipbindings" }
@@ -44,6 +45,12 @@ try {
         } finally { Pop-Location }
         $Binary = Join-Path $Root "desktop\build\bin\$Name.exe"
         if (-not (Test-Path $Binary)) { throw "Expected Wails output not found: $Binary" }
+        $ExpectedVersion = (Get-Content (Join-Path $Root 'desktop\wails.json') -Raw | ConvertFrom-Json).info.productVersion
+        $VersionInfo = [Diagnostics.FileVersionInfo]::GetVersionInfo($Binary)
+        if ($VersionInfo.FileVersion -ne $ExpectedVersion -or $VersionInfo.ProductVersion -ne $ExpectedVersion -or
+            $VersionInfo.FileVersionRaw.ToString() -ne "$ExpectedVersion.0" -or $VersionInfo.ProductVersionRaw.ToString() -ne "$ExpectedVersion.0") {
+            throw "Built executable version resources do not match $ExpectedVersion."
+        }
         $Output = Join-Path $Root "build"
         New-Item -ItemType Directory -Force $Output | Out-Null
         Copy-Item $Binary (Join-Path $Output "$Name.exe") -Force

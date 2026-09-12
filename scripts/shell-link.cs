@@ -39,7 +39,7 @@ namespace Starling.Installer {
                 IShellLinkW link = (IShellLinkW)instance;
                 link.SetPath(target);
                 link.SetWorkingDirectory(directory);
-                link.SetDescription("Starling - experimental unofficial desktop podcast client");
+                link.SetDescription("Starling - unofficial desktop podcast client");
                 ((IPersistFile)instance).Save(shortcut, true);
             } finally { Marshal.FinalReleaseComObject(instance); }
         }

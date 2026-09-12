@@ -108,7 +108,7 @@ func (s *Service) Detail(ctx context.Context, epoch uint64, kind, id string) (mo
 	var it model.Item
 	var e error
 	if s.session.View().State == "connected" {
-		_, e = s.session.Do(ctx, func(c context.Context, token string) error {
+		_, e = s.session.DoAt(ctx, epoch, func(c context.Context, token string) error {
 			var er error
 			it, er = s.p.Detail(c, token, kind, id)
 			return er

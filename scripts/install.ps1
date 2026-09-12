@@ -21,4 +21,4 @@ try {
 }
 New-Item -ItemType Directory -Force (Split-Path -Parent $Menu) | Out-Null
 [Starling.Installer.ShellLinks]::Create($Menu, $Destination, $Target)
-Write-Host "Installed for the current user. Account features remain experimental and disabled by default."
+Write-Host "Installed for the current user. Account access is disabled by default and can be enabled in settings."

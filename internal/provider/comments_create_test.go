@@ -107,7 +107,7 @@ func TestCreateCommentPreflightAndResponseValidation(t *testing.T) {
 		t.Fatalf("preflight sent %d requests", calls)
 	}
 	for _, raw := range []string{`{"data":` + strings.ReplaceAll(commentFixture, commentEpisode, "66467d2c251bd96e6cdcdddf") + `}`, `{"data":` + strings.Replace(commentFixture, `"threadReplyCount":2`, `"replyCount":-1`, 1) + `}`} {
-		if _, e := decodeCreatedComment([]byte(raw), commentEpisode); e == nil {
+		if _, e := decodeCreatedCommentTarget([]byte(raw), commentEpisode, "", ""); e == nil {
 			t.Fatal("invalid created comment accepted")
 		}
 	}

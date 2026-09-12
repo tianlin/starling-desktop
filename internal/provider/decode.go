@@ -95,7 +95,7 @@ func decodeItem(raw json.RawMessage, kind string) (model.Item, error) {
 	pay := strings.ToUpper(text(m, "payType"))
 	it.Restricted = (pay != "" && pay != "FREE") || boolean(m, "isPrivate") || boolean(m, "isDeleted")
 	if it.Restricted {
-		it.Restriction = "首版不播放付费、私密或下架内容，请在官方客户端确认权限。"
+		it.Restriction = "暂不支持付费、私密或下架内容，请在官方客户端确认权限。"
 	}
 	media := object(m, "media")
 	it.MediaURL = first(text(object(m, "enclosure"), "url"), text(object(media, "source"), "url"), text(media, "url"))

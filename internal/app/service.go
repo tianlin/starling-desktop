@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const Version = "0.1.0-alpha.1"
+const Version = "0.2.0"
 
 type Service struct {
 	p                     provider.Provider
@@ -93,7 +93,7 @@ func (s *Service) SaveSettings(v model.Settings) error {
 	}
 	view := s.session.View()
 	if !v.ExperimentalAccount && view.Identity != nil {
-		return model.Err("ACCOUNT_ACTIVE", "关闭实验接入前，请先退出账号。")
+		return model.Err("ACCOUNT_ACTIVE", "关闭账号接入前，请先退出账号。")
 	}
 	return s.session.Commit(view.Epoch, func(string) error {
 		s.mu.Lock()
@@ -102,14 +102,17 @@ func (s *Service) SaveSettings(v model.Settings) error {
 			return e
 		}
 		s.settings = v
+		s.startupError = nil
 		return nil
 	})
 }
 func (s *Service) Bootstrap() (Bootstrap, error) {
 	b := Bootstrap{Version: Version, Adapter: provider.AdapterVersion, Session: s.session.View(), Settings: s.Settings(), Queue: []model.Item{}, Bookmarks: []model.Item{}, History: []model.Progress{}}
+	s.mu.Lock()
 	if s.startupError != nil {
 		b.Warning = model.PublicError(s.startupError)
 	}
+	s.mu.Unlock()
 	e := s.session.Commit(b.Session.Epoch, func(scope string) error {
 		s.mu.Lock()
 		s.resetPlaybackEpochLocked(b.Session.Epoch)
@@ -145,7 +148,7 @@ func (s *Service) Bootstrap() (Bootstrap, error) {
 }
 func (s *Service) checkExperimental() error {
 	if !s.Settings().ExperimentalAccount {
-		return model.Err("EXPERIMENTAL_DISABLED", "实验性账号接入默认关闭，请先阅读风险说明并手动启用。")
+		return model.Err("EXPERIMENTAL_DISABLED", "账号接入默认关闭，请先阅读风险说明并手动启用。")
 	}
 	return nil
 }
@@ -243,6 +246,7 @@ func (s *Service) Reset(epoch uint64, confirm string) error {
 			return e
 		}
 		s.settings = model.DefaultSettings()
+		s.startupError = nil
 		s.log = nil
 		return nil
 	})
