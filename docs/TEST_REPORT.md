@@ -12,9 +12,9 @@
 | 根模块 go vet ./... | 通过 |
 | frontend 中 npm test | TypeScript 编译和 13 项 Node 测试通过 |
 | desktop 模块 go test ./... / go vet ./... | 通过编译与静态检查；宿主尚无专用测试文件 |
-| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r2 | 全流程通过，输出独立 Starling-candidate-r2.exe；跳过绑定生成，未启动应用 |
+| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r3 | 全流程通过，输出独立 Starling-candidate-r3.exe；跳过绑定生成，未启动应用 |
 | 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
-| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，13 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
+| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，14 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
 | 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
 | 依赖材料 | 实际二进制 18 个外部 Go 模块＋Go 运行时/工具链＋TypeScript 构建工具，共 20 项；递归收集 63 份许可证/声明及文件哈希，没有组件缺少声明文本，适用性仍待专业审查 |
 | 独立代码检查 | 只读审查和离线 provider/app 测试通过；非 CodeRabbit 报告，未替代实机验收 |
@@ -37,7 +37,7 @@
 
 新增回归覆盖设备 UUID 每客户端稳定且相互独立、不伪装手机、私有库末页规则、异常分页不被覆盖、嵌套错误进入诊断、错误时保留缓存、内存缓存过期和缓存文案。
 
-候选文件 `build/Starling-candidate-r2.exe` SHA-256：`37ef23db2460a8ef68d5d38fd159ad46ab81cd9f8a2d4383b2405de301852fd8`。
+候选文件 `build/Starling-candidate-r3.exe` SHA-256：`34b08d2a71466796d593225a43e488207529a65cef01b9b4f2c64768658b1b93`。
 
 本机证据位于 `build/core-tests.jsonl`、`build/vulnerabilities-after.txt`、`build/compliance/`、`docs/test-results/`（均为不提交的构建/测试产物）。不提交真实账号响应。
 
@@ -68,6 +68,14 @@
 这些材料是源树范围的审查集合，不能据此声称全部许可通过。原生系统 DLL、WebView2 和编解码运行时条款仍需单独评估。
 
 安装修复提交 `948dff17597e7ef3013c860c5ce665dc4e75e391` 的 [CI 34678084404](https://github.com/tianlin/starling-desktop/actions/runs/34678084404) 已全部成功，包括独立 Windows 安装测试、Linux 核心/浏览器测试与 Windows 构建/漏洞扫描。
+
+## 弹窗可访问名称与键盘回归
+
+所有共用弹窗通过 aria-labelledby 关联当前标题；关闭按钮名称为“关闭弹窗”。新增合成浏览器检查先复现缺少弹窗名称，再复现 Tab 离开末项落到 body；修复后验证 Enter 打开、双向 Tab 首尾循环、Escape 关闭与焦点返回触发按钮。监听器随关闭移除，动态禁用/隐藏的控件不纳入焦点循环。14 项浏览器回归、13 项前端测试和 r3 完整候选构建通过；r3 漏洞扫描无命中，20 项组件 / 63 份材料已重新生成。
+
+此项没有运行真实屏幕阅读器，也不替代原生 WebView2 或 Windows DPI 验收。
+
+依赖材料提交 `65374385e4d56228a3734e6a42a2204349e16250` 的 [CI 34678340168](https://github.com/tianlin/starling-desktop/actions/runs/34678340168) 已全部成功。
 
 ## 历史合成测试
 

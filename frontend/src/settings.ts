@@ -2,15 +2,32 @@ import type { Application } from './shell.js';
 import { APIError, call, describeError } from './api.js';
 import type { Item } from './types.js';
 import { qrLogin } from './qr-login.js';
-import { button, el, input } from './dom.js';
+import { button, el, input, icon } from './dom.js';
 // Reopening the dialog must wait for the previous SMS cancellation and reload.
 let accountCleanup: Promise<void> = Promise.resolve();
 function openModal(app: Application, title: string) {
     const body = document.querySelector<HTMLElement>('#modal-content')!;
     body.replaceChildren();
     const head = el('div', 'modal-head');
-    head.append(el('h2', '', title), button('×', () => app.modal.close(), 'icon-button'));
+    const heading = el('h2', '', title);
+    heading.id = 'modal-title';
+    app.modal.setAttribute('aria-labelledby', heading.id);
+    head.append(heading, icon('×', '关闭弹窗', () => app.modal.close()));
     body.append(head);
+    const keepFocus = (event: KeyboardEvent) => {
+        if (event.key !== 'Tab' || event.ctrlKey || event.altKey || event.metaKey) return;
+        const controls = [...body.querySelectorAll<HTMLElement>('button,input,select,textarea,a[href],[tabindex]')]
+            .filter(node => node.tabIndex >= 0 && !node.matches(':disabled') && node.getClientRects().length > 0);
+        const first = controls[0], last = controls.at(-1);
+        if (!first || !last) return;
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault(); first.focus();
+        }
+    };
+    app.modal.addEventListener('keydown', keepFocus);
+    app.modal.addEventListener('close', () => app.modal.removeEventListener('keydown', keepFocus), { once: true });
     app.modal.showModal();
     return body;
 }
