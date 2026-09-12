@@ -1,15 +1,26 @@
-import type { Call, Comment, CommentCreated, CommentPage, Session } from './types.js';
+import type { Call, Comment, CommentCreated, CommentOrder, CommentPage, Session } from './types.js';
 import { APIError, describeError } from './api.js';
 import { button, el, empty } from './dom.js';
 
-interface PageState extends CommentPage { loaded: boolean; loading: boolean; error: string; cursors: Set<string> }
+interface PageState extends CommentPage { loaded: boolean; loading: boolean; error: string; cursors: Set<string>; revision: number; stale: boolean; scroll: number }
 interface EpisodeState extends PageState {
+    order: CommentOrder; pages: Record<CommentOrder, PageState>;
     threads: Map<string, PageState>; expanded: Set<string>;
     draft: string; sending: boolean; uncertain: boolean; sendError: string; sent: boolean;
     confirmed: Map<string, Comment>;
 }
-const freshPage = (): PageState => ({ items: [], cursor: '', complete: false, loaded: false, loading: false, error: '', cursors: new Set() });
-const freshEpisode = (): EpisodeState => ({ ...freshPage(), threads: new Map(), expanded: new Set(), draft: '', sending: false, uncertain: false, sendError: '', sent: false, confirmed: new Map() });
+const freshPage = (): PageState => ({ items: [], cursor: '', complete: false, loaded: false, loading: false, error: '', cursors: new Set(), revision: 0, stale: false, scroll: 0 });
+function freshEpisode(): EpisodeState {
+    const episode = { order: 'hot', pages: { hot: freshPage(), latest: freshPage() }, threads: new Map(), expanded: new Set(), draft: '', sending: false, uncertain: false, sendError: '', sent: false, confirmed: new Map() } as EpisodeState;
+    // Consumers see the selected page; requests retain the concrete page they started with.
+    for (const key of Object.keys(freshPage()) as (keyof PageState)[]) {
+        Object.defineProperty(episode, key, {
+            get: () => episode.pages[episode.order][key],
+            set: value => { Object.assign(episode.pages[episode.order], { [key]: value }); },
+        });
+    }
+    return episode;
+}
 function isComment(value: unknown): value is Comment {
     if (!value || typeof value !== 'object') return false;
     const item = value as Comment;
@@ -24,7 +35,6 @@ export class CommentsController {
     private cache = new Map<string, EpisodeState>();
     private sessionKey = '';
     private epoch = 0;
-    private generation = 0;
     private episodeId = '';
     private authorId = '';
     connected = false;
@@ -41,14 +51,13 @@ export class CommentsController {
         this.connected = connected;
         if (key === this.sessionKey) {
             if (changed) {
-                this.generation++; this.state.loading = false;
-                for (const thread of this.state.threads.values()) thread.loading = false;
+                for (const episode of this.cache.values()) for (const page of [...Object.values(episode.pages), ...episode.threads.values()]) { page.revision++; page.loading = false; }
                 this.onChange?.();
             }
             return;
         }
         this.sessionKey = key; this.epoch = session.epoch;
-        this.generation++; this.cache.clear(); this.state = freshEpisode();
+        this.cache.clear(); this.state = freshEpisode();
         if (this.episodeId) this.cache.set(this.episodeId, this.state);
         this.onChange?.();
     }
@@ -58,12 +67,15 @@ export class CommentsController {
         this.cache.set(episodeId, this.state);
     }
     leave() {
-        this.generation++;
-        this.state.loading = false;
-        for (const thread of this.state.threads.values()) thread.loading = false;
         this.episodeId = ''; this.onChange = undefined;
     }
-    async load() { await this.fetchPage(this.state); }
+    async load() { await this.fetchPage(this.state, this.state.pages[this.state.order], this.episodeId, this.state.order, undefined, this.state.stale); }
+    async selectOrder(order: CommentOrder) {
+        if (order === this.state.order) return;
+        this.state.order = order; this.onChange?.();
+        if (!this.state.loaded || this.state.stale) await this.load();
+    }
+    rememberScroll(scroll: number, order = this.state.order) { this.state.pages[order].scroll = Math.max(0, scroll); }
     setDraft(text: string) { if (!this.state.sending) { this.state.draft = text; this.state.sent = false; } }
     acknowledgePublished() {
         if (this.state.sending || !this.state.uncertain) return;
@@ -81,8 +93,9 @@ export class CommentsController {
             if (key !== this.sessionKey) return;
             if (!isComment(result?.comment) || result.comment.author.id !== this.authorId) throw new Error('发表响应无法确认。');
             target.confirmed.set(result.comment.id, result.comment);
-            target.items = [result.comment, ...target.items.filter(item => item.id !== result.comment.id)];
             target.draft = ''; target.uncertain = false; target.sent = true;
+            for (const page of Object.values(target.pages)) { page.stale = true; page.revision++; page.loading = false; }
+            if (this.state === target && this.episodeId === episodeId) void this.fetchPage(target, target.pages[target.order], episodeId, target.order, undefined, true);
         } catch (e) {
             if (key !== this.sessionKey) return;
             const definite = new Set(['UNAUTHORIZED', 'STALE_SESSION', 'INVALID_ID', 'INVALID_COMMENT', 'INVALID_REQUEST', 'UNSUPPORTED', 'RATE_LIMIT', 'FORBIDDEN', 'REQUEST_REJECTED', 'EXPIRED', 'COMMENT_BUSY', 'COMMENT_SESSION_LIMIT']);
@@ -95,42 +108,43 @@ export class CommentsController {
     }
     async refresh() {
         if (!this.connected || !this.episodeId) return;
-        this.generation++; this.state.loading = false;
-        for (const thread of this.state.threads.values()) thread.loading = false;
-        await this.fetchPage(this.state, undefined, true);
+        await this.fetchPage(this.state, this.state.pages[this.state.order], this.episodeId, this.state.order, undefined, true);
     }
     async loadThread(commentId: string, more = false) {
         let thread = this.state.threads.get(commentId);
         if (!thread) { thread = freshPage(); this.state.threads.set(commentId, thread); }
         this.state.expanded.add(commentId);
         if (thread.loaded && !more) { this.onChange?.(); return; }
-        await this.fetchPage(thread, commentId);
+        await this.fetchPage(this.state, thread, this.episodeId, this.state.order, commentId);
     }
-    private async fetchPage(target: PageState, commentId?: string, refresh = false) {
-        if (!this.connected || !this.episodeId || target.loading || (!refresh && target.loaded && (target.complete || !target.cursor))) return;
-        const generation = this.generation, epoch = this.epoch, episodeId = this.episodeId;
+    private async fetchPage(episode: EpisodeState, target: PageState, episodeId: string, order: CommentOrder, commentId?: string, refresh = false) {
+        if (!this.connected || !episodeId || (!refresh && (target.loading || (target.loaded && (target.complete || !target.cursor))))) return;
+        const revision = ++target.revision, epoch = this.epoch, key = this.sessionKey;
+        const current = () => key === this.sessionKey && revision === target.revision;
+        const notify = () => { if (this.state === episode && this.episodeId === episodeId && (commentId || episode.order === order)) this.onChange?.(); };
         const cursor = refresh ? '' : target.cursor;
-        target.loading = true; target.error = ''; this.onChange?.();
+        target.loading = true; target.error = ''; notify();
         try {
-            const page = await this.call<CommentPage>(commentId ? 'comments.thread' : 'comments.list', { epoch, episodeId, ...(commentId ? { commentId } : {}), cursor });
-            if (generation !== this.generation) return;
+            const page = await this.call<CommentPage>(commentId ? 'comments.thread' : 'comments.list', { epoch, episodeId, ...(commentId ? { commentId } : { order }), cursor });
+            if (!current()) return;
             if (!refresh && page.cursor && (page.cursor === cursor || target.cursors.has(page.cursor))) {
                 target.cursor = ''; target.complete = false;
                 throw new Error('评论分页游标重复，已停止加载。请刷新评论后重试。');
             }
             if (refresh) {
-                target.items = [...this.state.confirmed.values()].reverse(); target.cursors.clear();
+                target.items = []; target.cursors.clear();
             }
             const ids = new Set(target.items.map(item => item.id));
             for (const item of page.items) if (!ids.has(item.id)) { ids.add(item.id); target.items.push(item); }
+            if (!commentId) for (const item of page.items) episode.confirmed.delete(item.id);
             if (cursor) target.cursors.add(cursor);
             target.cursor = page.complete || target.cursors.has(page.cursor) ? '' : page.cursor;
-            target.complete = page.complete; target.loaded = true;
+            target.complete = page.complete; target.loaded = true; target.stale = false;
         } catch (e) {
-            if (generation !== this.generation) return;
+            if (!current()) return;
             target.error = describeError(e);
         } finally {
-            if (generation === this.generation) { target.loading = false; this.onChange?.(); }
+            if (current()) { target.loading = false; notify(); }
         }
     }
 }
@@ -168,7 +182,30 @@ export function renderComments(controller: CommentsController, login: () => unkn
     const refresh = button('刷新评论', () => controller.refresh()); refresh.disabled = state.loading || state.sending;
     controls.append(refresh); composer.append(controls); updateButtons();
     composer.append(el('p', 'fine-print', '点击发表会以当前账号发送公开评论。草稿仅保留在本次运行中。'));
-    root.append(composer);
+    const sorts = el('div', 'comment-order-tabs'); sorts.setAttribute('role', 'tablist'); sorts.setAttribute('aria-label', '评论排序');
+    for (const [order, label] of [['hot', '热门'], ['latest', '最新']] as const) {
+        const tab = button(label, () => controller.selectOrder(order), 'comment-order-tab'); tab.id = `comment-order-${order}`;
+        tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(state.order === order));
+        tab.setAttribute('aria-controls', 'comment-order-list'); tab.tabIndex = state.order === order ? 0 : -1;
+        tab.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 'hot' : event.key === 'End' ? 'latest' : state.order === 'hot' ? 'latest' : 'hot';
+            void controller.selectOrder(next);
+            document.getElementById(`comment-order-${next}`)?.focus({ preventScroll: true });
+        });
+        sorts.append(tab);
+    }
+    root.append(sorts, composer);
+    if (state.confirmed.size) {
+        const published = el('section', 'comment-published'); published.setAttribute('aria-label', '刚刚发表');
+        published.append(el('h3', '', '刚刚发表'), el('p', 'muted', '已收到发表确认；列表中的位置以平台排序为准。'));
+        for (const item of [...state.confirmed.values()].reverse()) {
+            const entry = el('article', 'comment'); entry.dataset.commentId = item.id;
+            entry.append(el('strong', '', item.author.nickname), el('p', 'comment-text', item.text)); published.append(entry);
+        }
+        root.append(published);
+    }
     const drawPage = (target: PageState, container: HTMLElement, load: () => Promise<void>, reply = false) => {
         for (const item of target.items) {
             const card = el('article', 'comment'); card.dataset.commentId = item.id;
@@ -205,6 +242,8 @@ export function renderComments(controller: CommentsController, login: () => unkn
         if (target.loaded && !target.items.length && target.complete) container.append(el('p', 'muted', reply ? '暂无回复。' : '暂无评论。'));
         else if (target.loaded && !target.complete && !target.cursor) container.append(el('p', 'muted', '平台未提供下一页信息，暂时只能显示已获取的内容。'));
     };
-    drawPage(controller.state, root, () => controller.load());
+    const list = el('div', 'comment-list'); list.id = 'comment-order-list'; list.setAttribute('role', 'tabpanel');
+    list.setAttribute('aria-labelledby', `comment-order-${state.order}`); list.dataset.order = state.order;
+    drawPage(controller.state, list, () => controller.load()); root.append(list);
     return root;
 }

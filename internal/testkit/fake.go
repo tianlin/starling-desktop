@@ -8,15 +8,16 @@ import (
 )
 
 type Fake struct {
-	SendFunc          func(context.Context, string, string) error
-	LoginFunc         func(context.Context, string, string, string) (model.Credentials, model.Identity, error)
-	MeFunc            func(context.Context, string) (model.Identity, error)
-	RefreshFunc       func(context.Context, model.Credentials) (model.Credentials, error)
-	ListFunc          func(context.Context, string, string, string, string) (model.Page, error)
-	DetailFunc        func(context.Context, string, string, string) (model.Item, error)
-	CommentsFunc      func(context.Context, string, string, string) (model.CommentPage, error)
-	CommentThreadFunc func(context.Context, string, string, string, string) (model.CommentPage, error)
-	CreateCommentFunc func(context.Context, string, string, string) (model.Comment, error)
+	SendFunc            func(context.Context, string, string) error
+	LoginFunc           func(context.Context, string, string, string) (model.Credentials, model.Identity, error)
+	MeFunc              func(context.Context, string) (model.Identity, error)
+	RefreshFunc         func(context.Context, model.Credentials) (model.Credentials, error)
+	ListFunc            func(context.Context, string, string, string, string) (model.Page, error)
+	DetailFunc          func(context.Context, string, string, string) (model.Item, error)
+	CommentsFunc        func(context.Context, string, string, string) (model.CommentPage, error)
+	CommentsOrderedFunc func(context.Context, string, string, string, model.CommentOrder) (model.CommentPage, error)
+	CommentThreadFunc   func(context.Context, string, string, string, string) (model.CommentPage, error)
+	CreateCommentFunc   func(context.Context, string, string, string) (model.Comment, error)
 }
 
 func (f *Fake) CreateComment(ctx context.Context, token, eid, text string) (model.Comment, error) {
@@ -31,6 +32,12 @@ func (f *Fake) Comments(ctx context.Context, token, eid, cursor string) (model.C
 		return f.CommentsFunc(ctx, token, eid, cursor)
 	}
 	return model.CommentPage{Items: []model.Comment{}, Complete: true}, nil
+}
+func (f *Fake) CommentsOrdered(ctx context.Context, token, eid, cursor string, order model.CommentOrder) (model.CommentPage, error) {
+	if f.CommentsOrderedFunc != nil {
+		return f.CommentsOrderedFunc(ctx, token, eid, cursor, order)
+	}
+	return f.Comments(ctx, token, eid, cursor)
 }
 func (f *Fake) CommentThread(ctx context.Context, token, eid, cid, cursor string) (model.CommentPage, error) {
 	if f.CommentThreadFunc != nil {

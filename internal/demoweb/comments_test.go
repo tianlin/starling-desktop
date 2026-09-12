@@ -55,7 +55,14 @@ func TestSyntheticPublicationCanBeReadBack(t *testing.T) {
 		t.Fatal(out, err)
 	}
 	p, err := s.app.Comments(context.Background(), epoch, sample(0).ID, "", "")
-	if err != nil || len(p.Items) != 3 || p.Items[0].ID != out.Comment.ID {
+	if err != nil || len(p.Items) != 2 || p.Items[0].ID == out.Comment.ID {
 		t.Fatal(p, err)
+	}
+	q, err := s.app.CommentsOrdered(context.Background(), epoch, sample(0).ID, "", "", model.CommentOrderLatest)
+	if err != nil || len(q.Items) != 3 || q.Items[0].ID != out.Comment.ID {
+		t.Fatal(q, err)
+	}
+	if _, err := s.app.CommentsOrdered(context.Background(), epoch, sample(0).ID, "", p.Cursor, model.CommentOrderLatest); err == nil {
+		t.Fatal("mixed order cursor accepted")
 	}
 }

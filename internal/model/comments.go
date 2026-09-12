@@ -5,6 +5,24 @@ import (
 	"unicode/utf8"
 )
 
+type CommentOrder string
+
+const (
+	CommentOrderHot    CommentOrder = "hot"
+	CommentOrderLatest CommentOrder = "latest"
+)
+
+func NormalizeCommentOrder(order CommentOrder) (CommentOrder, error) {
+	switch order {
+	case "", CommentOrderHot:
+		return CommentOrderHot, nil
+	case CommentOrderLatest:
+		return CommentOrderLatest, nil
+	default:
+		return "", Err("INVALID_ORDER", "不支持该评论排序。")
+	}
+}
+
 type Comment struct {
 	ID         string   `json:"id"`
 	Author     Identity `json:"author"`

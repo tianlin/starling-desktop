@@ -2,8 +2,11 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
+	"starling/internal/model"
 	"starling/internal/security"
 	"testing"
 	"time"
@@ -41,36 +44,47 @@ func TestLiveCommentsReadOnly(t *testing.T) {
 		}
 		eid = p.Items[0].ID
 	}
-	cursor := ""
-	seen := map[string]bool{}
-	threadReads := 0
-	for n := 1; n <= 3; n++ {
-		p, e := c.Comments(ctx, saved.Credentials.Access, eid, cursor)
-		if e != nil {
-			t.Fatal(e)
-		}
-		t.Logf("primary page=%d items=%d complete=%v cursor=%v", n, len(p.Items), p.Complete, p.Cursor != "")
-		for _, item := range p.Items {
-			if item.ReplyCount == 0 || threadReads >= 2 {
-				continue
-			}
-			threadReads++
-			replies, e := c.CommentThread(ctx, saved.Credentials.Access, eid, item.ID, "")
+	for _, order := range []model.CommentOrder{model.CommentOrderHot, model.CommentOrderLatest} {
+		cursor := ""
+		seen := map[string]bool{}
+		var lastDate time.Time
+		for n := 1; n <= 2; n++ {
+			p, e := c.CommentsOrdered(ctx, saved.Credentials.Access, eid, cursor, order)
 			if e != nil {
 				t.Fatal(e)
 			}
-			t.Logf("thread sample=%d expected=%d items=%d complete=%v cursor=%v", threadReads, item.ReplyCount, len(replies.Items), replies.Complete, replies.Cursor != "")
+			t.Logf("primary order=%s page=%d items=%d complete=%v cursor=%v", order, n, len(p.Items), p.Complete, p.Cursor != "")
+			if order == model.CommentOrderLatest {
+				for _, item := range p.Items {
+					date, _ := time.Parse(time.RFC3339Nano, item.CreatedAt)
+					if !lastDate.IsZero() && date.After(lastDate) {
+						t.Fatal("TIME ordering not descending in sampled pages")
+					}
+					lastDate = date
+				}
+			}
+			if p.Cursor != "" {
+				raw, e := decodeScopedCommentCursor(p.Cursor, eid, order)
+				if e != nil {
+					t.Fatal(e)
+				}
+				var fields map[string]json.RawMessage
+				_ = json.Unmarshal(raw, &fields)
+				keys := make([]string, 0, len(fields))
+				for k := range fields {
+					keys = append(keys, k)
+				}
+				sort.Strings(keys)
+				t.Logf("primary order=%s continuation fields=%v", order, keys)
+			}
+			if p.Complete {
+				break
+			}
+			if p.Cursor == "" || p.Cursor == cursor || seen[p.Cursor] {
+				t.Fatal("missing or repeated primary cursor")
+			}
+			seen[p.Cursor] = true
+			cursor = p.Cursor
 		}
-		if p.Complete {
-			break
-		}
-		if p.Cursor == "" || p.Cursor == cursor || seen[p.Cursor] {
-			t.Fatal("missing or repeated primary cursor")
-		}
-		seen[p.Cursor] = true
-		cursor = p.Cursor
-	}
-	if threadReads == 0 {
-		t.Log("no replies in sampled primary pages; live thread contract unverified")
 	}
 }

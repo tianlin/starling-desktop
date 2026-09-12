@@ -20,13 +20,13 @@ test('comments are lazy, paginated with ID deduplication, and retained on revisi
     assert.equal(calls.length, 2);
 });
 
-test('route and account changes discard late responses and clear private data', async () => {
+test('late reads update their own episode cache and account changes clear private data', async () => {
     const pending = [];
     const c = new CommentsController(() => new Promise(resolve => pending.push(resolve)));
     c.setSession(session()); c.open('ep'); const first = c.load();
     c.leave(); c.open('other'); pending.shift()(page(['old'])); await first;
     assert.deepEqual(c.state.items, []);
-    c.open('ep'); const second = c.load();
+    c.open('ep'); assert.deepEqual(c.state.items.map(x => x.id), ['old']); const second = c.refresh();
     c.setSession(session(2, 'bob')); pending.shift()(page(['alice'])); await second;
     assert.deepEqual(c.state.items, []);
     c.setSession({ epoch: 3, state: 'guest' }); await c.load();
@@ -47,15 +47,13 @@ test('reply pagination is independent and failure preserves loaded comments', as
     assert.equal(c.state.items.length, 1); assert.equal(c.state.error, '暂时失败');
 });
 
-test('reopening a route can retry while its old request is pending', async () => {
+test('reopening a route shares its pending request without issuing duplicate reads', async () => {
     const pending = [];
     const c = new CommentsController(() => new Promise(resolve => pending.push(resolve)));
     c.setSession(session()); c.open('ep'); const old = c.load();
     c.leave(); c.open('ep'); const current = c.load();
-    pending[0](page(['stale'])); await old;
-    assert.equal(c.state.loading, true);
-    assert.deepEqual(c.state.items, []);
-    pending[1](page(['fresh'])); await current;
+    assert.equal(pending.length, 1);
+    pending[0](page(['fresh'])); await old; await current;
     assert.equal(c.state.loading, false);
     assert.deepEqual(c.state.items.map(x => x.id), ['fresh']);
 });
@@ -72,7 +70,7 @@ test('re-expanding replies retains their current page until explicit load more',
     assert.equal(requests, 2);
 });
 
-test('drafts survive navigation and only confirmed create clears and prepends', async () => {
+test('drafts survive navigation and confirmed create keeps separate publication feedback', async () => {
     let resolve, payload;
     const c = new CommentsController(async (_, args) => { payload = args; return new Promise(r => { resolve = r; }); });
     c.setSession(session()); c.open('ep'); c.setDraft('hello\nworld');
@@ -82,7 +80,7 @@ test('drafts survive navigation and only confirmed create clears and prepends', 
     c.open('other'); c.setDraft('other draft');
     resolve({ comment: created('created') }); await sending;
     assert.equal(c.state.draft, 'other draft'); assert.equal(original.draft, '');
-    c.open('ep'); assert.equal(c.state.items[0].id, 'created');
+    c.open('ep'); assert.equal(c.state.confirmed.get('created').id, 'created'); assert.deepEqual(c.state.items, []);
     assert.equal(c.state.sending, false); assert.ok(payload.requestId);
     c.setDraft('private'); c.setSession(session(2, 'bob')); assert.equal(c.state.draft, '');
 });
@@ -107,16 +105,69 @@ test('malformed and duplicate result are uncertain; authorization failure retain
 });
 
 test('successful create survives an older read and refresh preserves content on failure', async () => {
-    let resolveRead, fail = false;
+    const pending = []; let fail = false;
     const c = new CommentsController(async action => {
         if (action === 'comments.create') return { comment: created('created') };
         if (fail) throw new Error('refresh failed');
-        return new Promise(resolve => { resolveRead = resolve; });
+        return new Promise(resolve => { pending.push(resolve); });
     });
     c.setSession(session()); c.open('ep'); const reading = c.load(); c.setDraft('new'); await c.submit();
-    resolveRead(page(['old'])); await reading;
-    assert.deepEqual(c.state.items.map(x => x.id), ['created', 'old']);
-    fail = true; await c.refresh(); assert.deepEqual(c.state.items.map(x => x.id), ['created', 'old']);
+    pending[0](page(['old'])); await reading;
+    pending.at(-1)(page(['fresh'])); await new Promise(resolve => setImmediate(resolve));
+    assert.equal(c.state.confirmed.has('created'), true);
+    assert.deepEqual(c.state.items.map(x => x.id), ['fresh']);
+    fail = true; await c.refresh(); assert.deepEqual(c.state.items.map(x => x.id), ['fresh']);
+});
+
+test('sorts cache their own cursors and scroll, share drafts, and restore per episode', async () => {
+    const calls = [];
+    const c = new CommentsController(async (_, args) => { calls.push(args); return page([args.order], args.order + '-next', false); });
+    c.setSession(session()); c.open('ep'); await c.load(); c.setDraft('shared'); c.rememberScroll(400);
+    assert.equal(c.state.order, 'hot'); await c.selectOrder('latest'); c.rememberScroll(800);
+    assert.equal(c.state.draft, 'shared'); assert.deepEqual(c.state.items.map(x => x.id), ['latest']);
+    await c.selectOrder('hot'); assert.equal(c.state.scroll, 400); assert.equal(c.state.cursor, 'hot-next');
+    await c.selectOrder('latest'); c.open('other'); assert.equal(c.state.order, 'hot'); c.open('ep');
+    assert.equal(c.state.order, 'latest'); assert.equal(c.state.scroll, 800); assert.equal(calls.length, 2);
+});
+
+test('late sort response settles only its own cache and does not redraw active order', async () => {
+    const pending = [];
+    const c = new CommentsController(() => new Promise(resolve => pending.push(resolve)));
+    c.setSession(session()); c.open('ep'); const hot = c.load(); const latest = c.selectOrder('latest');
+    pending[1](page(['latest'])); await latest;
+    let draws = 0; c.onChange = () => { draws++; };
+    pending[0](page(['hot'])); await hot;
+    assert.deepEqual(c.state.items.map(x => x.id), ['latest']); assert.equal(draws, 0);
+    await c.selectOrder('hot'); assert.deepEqual(c.state.items.map(x => x.id), ['hot']);
+});
+
+test('new root keeps server sort order and feedback disappears once fetched by ID', async () => {
+    let published = false;
+    const c = new CommentsController(async (action, args) => {
+        if (action === 'comments.create') { published = true; return { comment: created('new') }; }
+        return page(published && args.order === 'latest' ? ['new', 'older'] : ['popular']);
+    });
+    c.setSession(session()); c.open('ep'); await c.load(); c.setDraft('new'); await c.submit();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(c.state.items.map(x => x.id), ['popular']); assert.equal(c.state.confirmed.has('new'), true);
+    await c.selectOrder('latest'); assert.deepEqual(c.state.items.map(x => x.id), ['new', 'older']);
+    assert.equal(c.state.confirmed.has('new'), false);
+});
+
+test('refresh failure and next-page cursors remain scoped to their sort', async () => {
+    const calls = []; let fail = false;
+    const c = new CommentsController(async (_, args) => {
+        calls.push(args);
+        if (fail) throw new Error('refresh failed');
+        return page([args.order + (args.cursor ? '-page2' : '-page1')], args.cursor ? '' : args.order + '-next', !!args.cursor);
+    });
+    c.setSession(session()); c.open('ep'); await c.load(); await c.selectOrder('latest');
+    fail = true; await c.refresh(); assert.deepEqual(c.state.items.map(x => x.id), ['latest-page1']);
+    assert.equal(c.state.error, 'refresh failed');
+    await c.selectOrder('hot'); assert.equal(c.state.error, '');
+    fail = false; await c.load(); assert.equal(calls.at(-1).cursor, 'hot-next');
+    assert.deepEqual(c.state.items.map(x => x.id), ['hot-page1', 'hot-page2']);
+    await c.selectOrder('latest'); assert.equal(c.state.cursor, 'latest-next'); assert.equal(c.state.error, 'refresh failed');
 });
 
 test('refresh invalidates old read, resets pagination and guards repeated cursors', async () => {

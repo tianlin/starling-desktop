@@ -1,7 +1,17 @@
 import { APIError, describeError } from './api.js';
 import { button, el, empty } from './dom.js';
-const freshPage = () => ({ items: [], cursor: '', complete: false, loaded: false, loading: false, error: '', cursors: new Set() });
-const freshEpisode = () => ({ ...freshPage(), threads: new Map(), expanded: new Set(), draft: '', sending: false, uncertain: false, sendError: '', sent: false, confirmed: new Map() });
+const freshPage = () => ({ items: [], cursor: '', complete: false, loaded: false, loading: false, error: '', cursors: new Set(), revision: 0, stale: false, scroll: 0 });
+function freshEpisode() {
+    const episode = { order: 'hot', pages: { hot: freshPage(), latest: freshPage() }, threads: new Map(), expanded: new Set(), draft: '', sending: false, uncertain: false, sendError: '', sent: false, confirmed: new Map() };
+    // Consumers see the selected page; requests retain the concrete page they started with.
+    for (const key of Object.keys(freshPage())) {
+        Object.defineProperty(episode, key, {
+            get: () => episode.pages[episode.order][key],
+            set: value => { Object.assign(episode.pages[episode.order], { [key]: value }); },
+        });
+    }
+    return episode;
+}
 function isComment(value) {
     if (!value || typeof value !== 'object')
         return false;
@@ -17,7 +27,6 @@ export class CommentsController {
     cache = new Map();
     sessionKey = '';
     epoch = 0;
-    generation = 0;
     episodeId = '';
     authorId = '';
     connected = false;
@@ -36,17 +45,17 @@ export class CommentsController {
         this.connected = connected;
         if (key === this.sessionKey) {
             if (changed) {
-                this.generation++;
-                this.state.loading = false;
-                for (const thread of this.state.threads.values())
-                    thread.loading = false;
+                for (const episode of this.cache.values())
+                    for (const page of [...Object.values(episode.pages), ...episode.threads.values()]) {
+                        page.revision++;
+                        page.loading = false;
+                    }
                 this.onChange?.();
             }
             return;
         }
         this.sessionKey = key;
         this.epoch = session.epoch;
-        this.generation++;
         this.cache.clear();
         this.state = freshEpisode();
         if (this.episodeId)
@@ -60,14 +69,19 @@ export class CommentsController {
         this.cache.set(episodeId, this.state);
     }
     leave() {
-        this.generation++;
-        this.state.loading = false;
-        for (const thread of this.state.threads.values())
-            thread.loading = false;
         this.episodeId = '';
         this.onChange = undefined;
     }
-    async load() { await this.fetchPage(this.state); }
+    async load() { await this.fetchPage(this.state, this.state.pages[this.state.order], this.episodeId, this.state.order, undefined, this.state.stale); }
+    async selectOrder(order) {
+        if (order === this.state.order)
+            return;
+        this.state.order = order;
+        this.onChange?.();
+        if (!this.state.loaded || this.state.stale)
+            await this.load();
+    }
+    rememberScroll(scroll, order = this.state.order) { this.state.pages[order].scroll = Math.max(0, scroll); }
     setDraft(text) { if (!this.state.sending) {
         this.state.draft = text;
         this.state.sent = false;
@@ -101,10 +115,16 @@ export class CommentsController {
             if (!isComment(result?.comment) || result.comment.author.id !== this.authorId)
                 throw new Error('发表响应无法确认。');
             target.confirmed.set(result.comment.id, result.comment);
-            target.items = [result.comment, ...target.items.filter(item => item.id !== result.comment.id)];
             target.draft = '';
             target.uncertain = false;
             target.sent = true;
+            for (const page of Object.values(target.pages)) {
+                page.stale = true;
+                page.revision++;
+                page.loading = false;
+            }
+            if (this.state === target && this.episodeId === episodeId)
+                void this.fetchPage(target, target.pages[target.order], episodeId, target.order, undefined, true);
         }
         catch (e) {
             if (key !== this.sessionKey)
@@ -126,11 +146,7 @@ export class CommentsController {
     async refresh() {
         if (!this.connected || !this.episodeId)
             return;
-        this.generation++;
-        this.state.loading = false;
-        for (const thread of this.state.threads.values())
-            thread.loading = false;
-        await this.fetchPage(this.state, undefined, true);
+        await this.fetchPage(this.state, this.state.pages[this.state.order], this.episodeId, this.state.order, undefined, true);
     }
     async loadThread(commentId, more = false) {
         let thread = this.state.threads.get(commentId);
@@ -143,19 +159,22 @@ export class CommentsController {
             this.onChange?.();
             return;
         }
-        await this.fetchPage(thread, commentId);
+        await this.fetchPage(this.state, thread, this.episodeId, this.state.order, commentId);
     }
-    async fetchPage(target, commentId, refresh = false) {
-        if (!this.connected || !this.episodeId || target.loading || (!refresh && target.loaded && (target.complete || !target.cursor)))
+    async fetchPage(episode, target, episodeId, order, commentId, refresh = false) {
+        if (!this.connected || !episodeId || (!refresh && (target.loading || (target.loaded && (target.complete || !target.cursor)))))
             return;
-        const generation = this.generation, epoch = this.epoch, episodeId = this.episodeId;
+        const revision = ++target.revision, epoch = this.epoch, key = this.sessionKey;
+        const current = () => key === this.sessionKey && revision === target.revision;
+        const notify = () => { if (this.state === episode && this.episodeId === episodeId && (commentId || episode.order === order))
+            this.onChange?.(); };
         const cursor = refresh ? '' : target.cursor;
         target.loading = true;
         target.error = '';
-        this.onChange?.();
+        notify();
         try {
-            const page = await this.call(commentId ? 'comments.thread' : 'comments.list', { epoch, episodeId, ...(commentId ? { commentId } : {}), cursor });
-            if (generation !== this.generation)
+            const page = await this.call(commentId ? 'comments.thread' : 'comments.list', { epoch, episodeId, ...(commentId ? { commentId } : { order }), cursor });
+            if (!current())
                 return;
             if (!refresh && page.cursor && (page.cursor === cursor || target.cursors.has(page.cursor))) {
                 target.cursor = '';
@@ -163,7 +182,7 @@ export class CommentsController {
                 throw new Error('评论分页游标重复，已停止加载。请刷新评论后重试。');
             }
             if (refresh) {
-                target.items = [...this.state.confirmed.values()].reverse();
+                target.items = [];
                 target.cursors.clear();
             }
             const ids = new Set(target.items.map(item => item.id));
@@ -172,21 +191,25 @@ export class CommentsController {
                     ids.add(item.id);
                     target.items.push(item);
                 }
+            if (!commentId)
+                for (const item of page.items)
+                    episode.confirmed.delete(item.id);
             if (cursor)
                 target.cursors.add(cursor);
             target.cursor = page.complete || target.cursors.has(page.cursor) ? '' : page.cursor;
             target.complete = page.complete;
             target.loaded = true;
+            target.stale = false;
         }
         catch (e) {
-            if (generation !== this.generation)
+            if (!current())
                 return;
             target.error = describeError(e);
         }
         finally {
-            if (generation === this.generation) {
+            if (current()) {
                 target.loading = false;
-                this.onChange?.();
+                notify();
             }
         }
     }
@@ -242,7 +265,39 @@ export function renderComments(controller, login) {
     composer.append(controls);
     updateButtons();
     composer.append(el('p', 'fine-print', '点击发表会以当前账号发送公开评论。草稿仅保留在本次运行中。'));
-    root.append(composer);
+    const sorts = el('div', 'comment-order-tabs');
+    sorts.setAttribute('role', 'tablist');
+    sorts.setAttribute('aria-label', '评论排序');
+    for (const [order, label] of [['hot', '热门'], ['latest', '最新']]) {
+        const tab = button(label, () => controller.selectOrder(order), 'comment-order-tab');
+        tab.id = `comment-order-${order}`;
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', String(state.order === order));
+        tab.setAttribute('aria-controls', 'comment-order-list');
+        tab.tabIndex = state.order === order ? 0 : -1;
+        tab.addEventListener('keydown', event => {
+            if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key))
+                return;
+            event.preventDefault();
+            const next = event.key === 'Home' ? 'hot' : event.key === 'End' ? 'latest' : state.order === 'hot' ? 'latest' : 'hot';
+            void controller.selectOrder(next);
+            document.getElementById(`comment-order-${next}`)?.focus({ preventScroll: true });
+        });
+        sorts.append(tab);
+    }
+    root.append(sorts, composer);
+    if (state.confirmed.size) {
+        const published = el('section', 'comment-published');
+        published.setAttribute('aria-label', '刚刚发表');
+        published.append(el('h3', '', '刚刚发表'), el('p', 'muted', '已收到发表确认；列表中的位置以平台排序为准。'));
+        for (const item of [...state.confirmed.values()].reverse()) {
+            const entry = el('article', 'comment');
+            entry.dataset.commentId = item.id;
+            entry.append(el('strong', '', item.author.nickname), el('p', 'comment-text', item.text));
+            published.append(entry);
+        }
+        root.append(published);
+    }
     const drawPage = (target, container, load, reply = false) => {
         for (const item of target.items) {
             const card = el('article', 'comment');
@@ -298,6 +353,12 @@ export function renderComments(controller, login) {
         else if (target.loaded && !target.complete && !target.cursor)
             container.append(el('p', 'muted', '平台未提供下一页信息，暂时只能显示已获取的内容。'));
     };
-    drawPage(controller.state, root, () => controller.load());
+    const list = el('div', 'comment-list');
+    list.id = 'comment-order-list';
+    list.setAttribute('role', 'tabpanel');
+    list.setAttribute('aria-labelledby', `comment-order-${state.order}`);
+    list.dataset.order = state.order;
+    drawPage(controller.state, list, () => controller.load());
+    root.append(list);
     return root;
 }

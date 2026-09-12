@@ -173,3 +173,9 @@ tests/e2e/media_failures.py 使用本机随机端口和受控 403 响应，直�
 ## 演示截图
 
 [screenshots/favorites.png](screenshots/favorites.png)、[screenshots/detail.png](screenshots/detail.png)、[screenshots/compact.png](screenshots/compact.png) 均来自合成演示环境，不含真实账号登录证据。
+
+## 评论热门 / 最新排序增量（2026-09-12）
+
+HOT 与 TIME 使用服务端排序，游标绑定单集与排序。真实只读同一单集两种排序均读取 15 + 1 条并确认终页；TIME 游标不含 hotSortScore，16 条跨页时间降序核验通过。只读取本应用 vault，没有续期、写回或发表评论；最新版手机 App 的具体 UI 与热度算法未核验。
+
+两个 Go 模块分别 go test ./...、go vet ./... 通过；前端 50 项通过；评论合成浏览器 12 组通过，包含独立缓存、分页失败保留、排序切换草稿、键盘切换、阅读位置恢复、确认结果独立展示、合成发表读回及播放连续性。独立审查发现并修复账号变化时旧滚动位置写入新缓存的问题。此阶段不包含回复发表，候选集成随回复阶段交付。

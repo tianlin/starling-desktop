@@ -18,6 +18,7 @@ export interface CommentPage {
     complete: boolean;
 }
 export interface CommentCreated { comment: Comment }
+export type CommentOrder = 'hot' | 'latest';
 export interface Item {
     kind: 'episode' | 'podcast';
     id: string;

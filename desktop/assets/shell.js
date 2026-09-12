@@ -28,6 +28,7 @@ export class Application {
     lastMediaID = '';
     libraryGeneration = 0;
     comments = new CommentsController(call);
+    commentScroll;
     listCancellation = Promise.resolve();
     constructor() {
         this.player = new Player(document.querySelector('#audio'), call, () => this.boot?.session.epoch ?? 0, () => this.drawPlayer());
@@ -72,6 +73,7 @@ export class Application {
         }
     }
     wire() {
+        document.querySelector('.main').addEventListener('scroll', () => this.commentScroll?.());
         const nav = document.querySelector('#navigation');
         for (const name of Object.keys(titles)) {
             const b = button('', () => this.navigate(name), 'nav-item');
@@ -239,7 +241,7 @@ export class Application {
         if (!this.boot)
             return;
         this.stopList();
-        this.comments.leave();
+        this.leaveComments();
         this.route = name;
         this.routeGeneration++;
         this.list = null;
@@ -463,7 +465,7 @@ export class Application {
     }
     async details(it) {
         this.stopList();
-        this.comments.leave();
+        this.leaveComments();
         this.route = 'detail';
         const generation = ++this.routeGeneration;
         const epoch = this.boot.session.epoch;
@@ -481,7 +483,7 @@ export class Application {
     }
     showDetail(it) {
         this.stopList();
-        this.comments.leave();
+        this.leaveComments();
         this.route = 'detail';
         this.routeGeneration++;
         this.listKind = '';
@@ -525,24 +527,38 @@ export class Application {
         content.setAttribute('role', 'tabpanel');
         content.id = 'episode-tab-panel';
         let selected = 'notes';
+        const main = document.querySelector('.main');
+        let showingComments = false;
+        let renderedOrder = this.comments.state.order;
+        const scrollOwner = this.comments.state;
+        this.commentScroll = () => { if (showingComments && this.comments.state === scrollOwner)
+            this.comments.rememberScroll(main.scrollTop, renderedOrder); };
         const draw = () => {
+            this.commentScroll?.();
+            const scroll = selected === 'comments' ? this.comments.state.scroll : main.scrollTop;
             const focused = document.activeElement;
             const caret = focused instanceof HTMLTextAreaElement && content.contains(focused) ? { start: focused.selectionStart, end: focused.selectionEnd } : undefined;
+            const sortFocus = focused instanceof HTMLElement && focused.classList.contains('comment-order-tab');
             notesTab.setAttribute('aria-selected', String(selected === 'notes'));
             commentsTab.setAttribute('aria-selected', String(selected === 'comments'));
             notesTab.tabIndex = selected === 'notes' ? 0 : -1;
             commentsTab.tabIndex = selected === 'comments' ? 0 : -1;
             content.setAttribute('aria-labelledby', selected === 'notes' ? notesTab.id : commentsTab.id);
             content.replaceChildren(selected === 'notes' ? notes : renderComments(this.comments, () => showAccount(this)));
+            showingComments = selected === 'comments';
+            renderedOrder = this.comments.state.order;
+            main.scrollTop = scroll;
             if (caret) {
                 const draft = content.querySelector('textarea');
                 if (draft) {
-                    draft.focus();
+                    draft.focus({ preventScroll: true });
                     draft.setSelectionRange(caret.start, caret.end);
                 }
             }
+            if (sortFocus && showingComments)
+                content.querySelector(`#comment-order-${renderedOrder}`)?.focus({ preventScroll: true });
         };
-        const select = (tab) => { selected = tab; draw(); if (tab === 'comments' && !this.comments.state.loaded)
+        const select = (tab) => { selected = tab; draw(); if (tab === 'comments' && (!this.comments.state.loaded || this.comments.state.stale))
             void this.comments.load(); };
         const notesTab = button('节目说明', () => select('notes'), 'detail-tab');
         notesTab.id = 'episode-notes-tab';
@@ -565,6 +581,7 @@ export class Application {
         this.page.append(tabs, content);
         draw();
     }
+    leaveComments() { this.commentScroll?.(); this.commentScroll = undefined; this.comments.leave(); }
     drawPlayer() {
         const p = this.player;
         if (!p)
