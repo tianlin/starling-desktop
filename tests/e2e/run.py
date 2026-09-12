@@ -9,7 +9,8 @@ OUT.mkdir(exist_ok=True)
 EXE = ROOT / 'build' / ('demo.exe' if os.name == 'nt' else 'demo')
 EXE.parent.mkdir(exist_ok=True)
 subprocess.run(['go','build','-o',str(EXE),'./cmd/demo'],cwd=ROOT,check=True)
-process = subprocess.Popen([str(EXE)],cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+process = subprocess.Popen([str(EXE)],cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,
+                           creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
 results=[]
 try:
     for _ in range(100):
@@ -18,7 +19,7 @@ try:
         except Exception:time.sleep(.1)
     else:raise RuntimeError('Demo server did not start')
     with sync_playwright() as pw:
-        browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/chromium'),headless=True,args=['--no-sandbox'])
+        browser = pw.chromium.launch(executable_path=os.environ.get('CHROMIUM_PATH'),headless=True,args=['--mute-audio'])
         page=browser.new_page(viewport={'width':1280,'height':900},device_scale_factor=1)
         page.set_default_timeout(8000)
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
@@ -61,7 +62,7 @@ try:
         assert page.locator('#audio').evaluate('(a)=>a.paused')
         results.append('PASS: explicit synthetic banner and paused startup restore')
         page.locator('#page .episode-card .primary-soft').first.click()
-        page.wait_for_function("document.querySelector('#audio').currentTime > 0.1 && !document.querySelector('#audio').paused")
+        page.wait_for_function("() => document.querySelector('#audio').currentTime > 0.1 && !document.querySelector('#audio').paused")
         page.locator('#audio').evaluate('(a)=>window.__audioIdentity=a')
         current_id=page.locator('#player-art').get_attribute('data-id')
         page.locator('[data-route="queue"]').click()
@@ -72,22 +73,48 @@ try:
         page.locator('[data-route="home"]').click()
         expect(page.locator('#page .history-progress').first).to_contain_text('0:42')
         results.append('PASS: local progress persisted and presented')
+        # Hold the old login before dispatch, close the dialog, and then deliver it
+        # after a newer login succeeds. This must not close or log out the new UI.
+        if os.environ.get('STARLING_E2E_IN_MEMORY') != '1':
+            held=[]
+            def hold_login(route):
+                if route.request.post_data_json.get('action') == 'account.login' and not held:
+                    held.append(route)
+                else:
+                    route.continue_()
+            page.route('**/api',hold_login)
+            page.locator('#top-account').click()
+            page.locator('#modal .check-row input').first.check()
+            page.get_by_label('手机号',exact=True).fill('00000000000')
+            page.get_by_label('短信验证码',exact=True).fill('0000')
+            page.get_by_role('button',name='验证并连接',exact=True).click()
+            for _ in range(100):
+                if held: break
+                page.wait_for_timeout(20)
+            assert held, 'login was not intercepted'
+            page.get_by_role('button',name='取消连接',exact=True).click()
+            expect(page.locator('#modal')).not_to_be_visible()
         page.locator('#top-account').click()
         page.locator('#modal .check-row input').first.check()
         page.get_by_label('手机号',exact=True).fill('00000000000')
         page.get_by_label('短信验证码',exact=True).fill('0000')
         page.get_by_role('button',name='验证并连接',exact=True).click()
         expect(page.locator('#account-name')).to_have_text('合成测试账号')
+        if os.environ.get('STARLING_E2E_IN_MEMORY') != '1':
+            held[0].continue_()
+            page.unroute('**/api',hold_login)
+            expect(page.locator('#account-name')).to_have_text('合成测试账号')
+            results.append('PASS: cancelled queued login cannot replace a newer login')
         expect(page.locator('#page .episode-card')).to_have_count(3)
         page.get_by_role('button',name='加载全部',exact=True).click()
         expect(page.locator('#page .episode-card')).to_have_count(8)
         expect(page.locator('.list-toolbar')).to_contain_text('本轮加载结束')
         results.append('PASS: synthetic login and two-page favorites merge')
         expect(page.get_by_role('button',name='取消加载全部',exact=True)).not_to_be_visible()
-        page.screenshot(path=str(ROOT/'docs/screenshots/favorites.png'),full_page=False)
+        page.screenshot(path=str(OUT/'favorites.png'),full_page=False)
         first=page.locator('#page .episode-card').first
         first.locator('.primary-soft').click()
-        page.wait_for_function("!document.querySelector('#audio').paused")
+        page.wait_for_function("() => !document.querySelector('#audio').paused")
         field=page.get_by_label('筛选已加载内容');field.fill('城市');expect(page.locator('#page .episode-card')).to_have_count(3)
         field.press('Space');assert not page.locator('#audio').evaluate('(a)=>a.paused')
         field.fill('');expect(page.locator('#page .episode-card')).to_have_count(8)
@@ -102,9 +129,9 @@ try:
         assert page.locator('.shownotes script, .shownotes img, .shownotes iframe').count()==0
         assert page.evaluate('window.__xss') is None
         page.get_by_role('button',name='00:45',exact=True).click()
-        page.wait_for_function("document.querySelector('#audio').currentTime >= 45 && document.querySelector('#audio').currentTime < 50")
+        page.wait_for_function("() => document.querySelector('#audio').currentTime >= 45 && document.querySelector('#audio').currentTime < 50")
         results.append('PASS: Show Notes sanitization and timestamp seeking')
-        page.screenshot(path=str(ROOT/'docs/screenshots/detail.png'),full_page=False)
+        page.screenshot(path=str(OUT/'detail.png'),full_page=False)
         page.locator('#toggle-play').click()
         page.locator('#open-link').click()
         page.get_by_label('节目或单集的完整链接').fill('https://www.xiaoyuzhoufm.com.evil.invalid/episode/64db2d493fa4090b744c3100')
@@ -118,9 +145,37 @@ try:
         page.locator('[data-route="favorites"]').click();expect(page.locator('#page')).to_contain_text('连接账号后查看')
         results.append('PASS: logout stops audio and restores isolated guest scope')
         page.locator('[data-route="home"]').click()
-        page.set_viewport_size({'width':900,'height':700});page.screenshot(path=str(ROOT/'docs/screenshots/compact.png'))
+        page.set_viewport_size({'width':900,'height':700});page.screenshot(path=str(OUT/'compact.png'))
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
         results.append('PASS: compact 900×700 layout without horizontal overflow')
+        # The server may finish before cancellation reaches it. Preserve the
+        # connected account and make that outcome explicit, even after Escape.
+        if os.environ.get('STARLING_E2E_IN_MEMORY') != '1':
+            completed=[]
+            def hold_completed(route):
+                if route.request.post_data_json.get('action') == 'account.login':
+                    response=route.fetch()
+                    assert response.json()['ok']
+                    completed.append((route,response))
+                else: route.continue_()
+            page.route('**/api',hold_completed)
+            page.locator('#top-account').click()
+            page.get_by_label('手机号',exact=True).fill('00000000000')
+            page.get_by_label('短信验证码',exact=True).fill('0000')
+            page.get_by_role('button',name='验证并连接',exact=True).click()
+            for _ in range(100):
+                if completed: break
+                page.wait_for_timeout(20)
+            assert completed, 'completed login was not intercepted'
+            page.keyboard.press('Escape')
+            expect(page.locator('#modal')).not_to_be_visible()
+            expect(page.locator('#account-name')).to_have_text('合成测试账号')
+            expect(page.get_by_text('认证已完成，账号已连接。如需断开，请在账号管理中退出。',exact=True)).to_be_visible()
+            page.locator('#top-account').click()
+            completed[0][0].fulfill(response=completed[0][1])
+            page.unroute('**/api',hold_completed)
+            expect(page.get_by_role('button',name='退出并清除本机账号数据',exact=True)).to_be_visible()
+            results.append('PASS: Escape reports completed authentication and late success preserves reopened dialog')
         assert not errors,errors
         results.append('PASS: no uncaught browser errors')
         browser.close()

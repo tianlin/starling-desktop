@@ -2,10 +2,13 @@ package app
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"starling/internal/model"
 	"starling/internal/testkit"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestLibraryPaginationDedup(t *testing.T) {
@@ -91,5 +94,60 @@ func TestUnknownEndNotComplete(t *testing.T) {
 	v, e := s.Library(context.Background(), epoch, "favorites", "", "refresh")
 	if e != nil || v.Complete || v.Status != "unknown_end" {
 		t.Fatal(v, e)
+	}
+}
+
+func TestLibraryFailureIncludedInDiagnosticsWithCachePreserved(t *testing.T) {
+	failed := false
+	f := &testkit.Fake{ListFunc: func(context.Context, string, string, string, string) (model.Page, error) {
+		if failed {
+			return model.Page{}, model.Err("REQUEST_REJECTED", "fixture failure")
+		}
+		return model.Page{Items: []model.Item{item(idA)}, Complete: true}, nil
+	}}
+	s := fixture(t, f)
+	epoch := connect(t, s)
+	args := fmt.Sprintf(`{"epoch":%d,"kind":"favorites","mode":"refresh"}`, epoch)
+	s.Dispatch(context.Background(), "library", args)
+	failed = true
+	var result struct {
+		OK   bool              `json:"ok"`
+		Data model.LibraryView `json:"data"`
+	}
+	if e := json.Unmarshal([]byte(s.Dispatch(context.Background(), "library", args)), &result); e != nil {
+		t.Fatal(e)
+	}
+	if !result.OK || result.Data.Error == nil || len(result.Data.Items) != 1 {
+		t.Fatal("library error must preserve cached view")
+	}
+	var report struct {
+		Data struct {
+			Events []diagnosticEvent `json:"events"`
+		} `json:"data"`
+	}
+	json.Unmarshal([]byte(s.Dispatch(context.Background(), "diagnostics", `{}`)), &report)
+	if len(report.Data.Events) != 1 || report.Data.Events[0].Action != "library" || report.Data.Events[0].Code != "REQUEST_REJECTED" {
+		t.Fatalf("missing nested library error: %+v", report.Data.Events)
+	}
+}
+
+func TestInMemoryCompletedLibraryExpiresWhenRevisited(t *testing.T) {
+	s := fixture(t, &testkit.Fake{ListFunc: func(context.Context, string, string, string, string) (model.Page, error) {
+		return model.Page{Items: []model.Item{item(idA)}, Complete: true}, nil
+	}})
+	epoch := connect(t, s)
+	s.Library(context.Background(), epoch, "favorites", "", "refresh")
+	v, e := s.Library(context.Background(), epoch, "favorites", "", "cached")
+	if e != nil || v.Status != "cached" {
+		t.Fatalf("fresh cached status=%s err=%v", v.Status, e)
+	}
+	s.mu.Lock()
+	for _, stage := range s.stages {
+		stage.view.UpdatedAt = time.Now().Add(-11 * time.Minute).Format(time.RFC3339Nano)
+	}
+	s.mu.Unlock()
+	v, e = s.Library(context.Background(), epoch, "favorites", "", "cached")
+	if e != nil || v.Status != "stale" || len(v.Items) != 1 {
+		t.Fatalf("expired cache status=%s err=%v", v.Status, e)
 	}
 }

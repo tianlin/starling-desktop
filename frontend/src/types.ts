@@ -2,6 +2,8 @@ export interface AppFailure {
     code: string;
     message: string;
     retryAfter?: number;
+    httpStatus?: number;
+    upstreamCode?: number;
 }
 export interface Item {
     kind: 'episode' | 'podcast';

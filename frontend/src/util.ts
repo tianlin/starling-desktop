@@ -19,14 +19,14 @@ export function libraryStatus(v: Pick<Library, 'status' | 'items' | 'complete'>)
     const n = v.items.length;
     if (v.status === 'error')
         return `已保留 ${n} 条 · 本轮加载失败`;
-    if (v.complete)
-        return `本轮加载结束 · ${n} 条（非平台快照）`;
-    if (v.status === 'unknown_end')
-        return `已加载 ${n} 条 · 平台未确认完整性`;
     if (v.status === 'stale')
         return `上次缓存 ${n} 条 · 已过期`;
     if (v.status === 'cached')
         return `上次完整缓存 · ${n} 条`;
+    if (v.complete)
+        return `本轮加载结束 · ${n} 条（非平台快照）`;
+    if (v.status === 'unknown_end')
+        return `已加载 ${n} 条 · 平台未确认完整性`;
     if (v.status === 'idle')
         return '尚未加载';
     return `已加载 ${n} 条 · 部分内容`;

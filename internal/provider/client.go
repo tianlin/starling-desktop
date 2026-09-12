@@ -3,8 +3,10 @@ package provider
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -18,13 +20,15 @@ import (
 	"time"
 )
 
-const AdapterVersion = "xyz-readonly-2026-09-12"
+const AdapterVersion = "xyz-readonly-2026-09-12.1"
 const userAgent = "Starling/0.1.0-alpha (unofficial desktop podcast client)"
 
 type Client struct {
 	http           *http.Client
 	api, auth, web string
 	qrOrigin       string
+	deviceID       string
+	deviceErr      error
 	mu             sync.Mutex
 	cooldown       map[string]time.Time
 	slots          chan struct{}
@@ -60,7 +64,13 @@ func New() *Client {
 func newClient(h *http.Client, api, auth, web string) *Client {
 	cp := *h
 	cp.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Client{http: &cp, api: api, auth: auth, web: web, qrOrigin: "https://web-api.xiaoyuzhoufm.com", cooldown: map[string]time.Time{}, slots: make(chan struct{}, 3)}
+	// A random UUID identifies this client lifetime only; no hardware or mobile fingerprint.
+	var id [16]byte
+	_, deviceErr := rand.Read(id[:])
+	id[6] = (id[6] & 0x0f) | 0x40
+	id[8] = (id[8] & 0x3f) | 0x80
+	deviceID := fmt.Sprintf("%x-%x-%x-%x-%x", id[:4], id[4:6], id[6:8], id[8:10], id[10:])
+	return &Client{http: &cp, api: api, auth: auth, web: web, qrOrigin: "https://web-api.xiaoyuzhoufm.com", deviceID: deviceID, deviceErr: deviceErr, cooldown: map[string]time.Time{}, slots: make(chan struct{}, 3)}
 }
 func validToken(s string) bool {
 	return s != "" && len(s) <= 16384 && !strings.ContainsAny(s, "\r\n\x00")
@@ -180,6 +190,16 @@ func (c *Client) List(ctx context.Context, token, kind, pid, cursor string) (mod
 	if e != nil {
 		return out, e
 	}
+	// Live-checked 2026-09-12: these two endpoints omit loadMoreKey on
+	// terminal pages (including nonempty subscription pages). Keep this
+	// contract local; generic/other endpoints still require explicit evidence.
+	if kind == "favorites" || kind == "subscriptions" {
+		_, hasKey := env["loadMoreKey"]
+		_, hasMore := env["hasMore"]
+		if !hasKey && !hasMore {
+			complete = true
+		}
+	}
 	out = model.Page{Items: make([]model.Item, 0, len(items)), Cursor: next, Complete: complete}
 	for _, raw := range items {
 		it, e := decodeItem(raw, itemKind)
@@ -215,6 +235,10 @@ func (c *Client) request(ctx context.Context, method, target string, body any, h
 	u, e := url.Parse(target)
 	if e != nil {
 		return nil, nil, model.Err("NETWORK", "请求地址无效。")
+	}
+	deviceRequest := strings.HasPrefix(target, c.api+"/")
+	if deviceRequest && c.deviceErr != nil {
+		return nil, nil, model.Err("INTERNAL", "无法生成客户端会话标识，请重启应用后重试。")
 	}
 	c.mu.Lock()
 	wait := time.Until(c.cooldown[u.Host])
@@ -262,6 +286,9 @@ func (c *Client) request(ctx context.Context, method, target string, body any, h
 		}
 		req.Header.Set("Accept", "application/json, text/html;q=0.8")
 		req.Header.Set("User-Agent", userAgent)
+		if deviceRequest {
+			req.Header.Set("x-jike-device-id", c.deviceID)
+		}
 		if method == "POST" {
 			req.Header.Set("Content-Type", "application/json")
 		}
@@ -314,7 +341,15 @@ func (c *Client) request(ctx context.Context, method, target string, body any, h
 			}
 			return nil, nil, model.Err("UPSTREAM", "平台服务暂时不可用。")
 		case resp.StatusCode < 200 || resp.StatusCode >= 300:
-			return nil, nil, model.Err("REQUEST_REJECTED", "平台未接受请求，请在官方客户端检查账号或验证码。")
+			failure := &model.AppError{Code: "REQUEST_REJECTED", Message: "平台未接受此请求，可能是接口参数或兼容性问题。"}
+			failure.HTTPStatus = resp.StatusCode
+			var status struct {
+				Code int `json:"code"`
+			}
+			if json.Unmarshal(b, &status) == nil {
+				failure.UpstreamCode = status.Code
+			}
+			return nil, nil, failure
 		}
 		if strings.Contains(resp.Header.Get("Content-Type"), "json") || bytes.HasPrefix(bytes.TrimSpace(b), []byte("{")) {
 			if e = checkBusinessError(b); e != nil {

@@ -13,3 +13,7 @@ test('unknown pagination end never displays fully loaded',()=>{
  assert.match(libraryStatus({status:'unknown_end',items:[{}],complete:false}),/未确认/);
  assert.match(libraryStatus({status:'complete',items:[{}],complete:true}),/结束/);
 });
+test('complete cached snapshots are identified as cache, including stale cache',()=>{
+ assert.match(libraryStatus({status:'cached',items:[{}],complete:true}),/上次完整缓存/);
+ assert.match(libraryStatus({status:'stale',items:[{}],complete:true}),/已过期/);
+});

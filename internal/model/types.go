@@ -8,9 +8,11 @@ import (
 )
 
 type AppError struct {
-	Code       string `json:"code"`
-	Message    string `json:"message"`
-	RetryAfter int    `json:"retryAfter,omitempty"`
+	Code         string `json:"code"`
+	Message      string `json:"message"`
+	RetryAfter   int    `json:"retryAfter,omitempty"`
+	HTTPStatus   int    `json:"httpStatus,omitempty"`
+	UpstreamCode int    `json:"upstreamCode,omitempty"`
 }
 
 func (e *AppError) Error() string      { return e.Code + ": " + e.Message }

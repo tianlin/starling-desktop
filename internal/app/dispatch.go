@@ -16,9 +16,11 @@ type reply struct {
 	Error *model.AppError `json:"error,omitempty"`
 }
 type diagnosticEvent struct {
-	Time   string `json:"time"`
-	Action string `json:"action"`
-	Code   string `json:"code"`
+	Time         string `json:"time"`
+	Action       string `json:"action"`
+	Code         string `json:"code"`
+	HTTPStatus   int    `json:"httpStatus,omitempty"`
+	UpstreamCode int    `json:"upstreamCode,omitempty"`
 }
 
 func decodePayload(raw string, v any) error {
@@ -42,6 +44,14 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 	if e != nil {
 		res.Data = nil
 		res.Error = model.PublicError(e)
+	}
+	// Library failures intentionally return a usable cached/partial view with
+	// ok=true. Include their nested error in diagnostics without discarding it.
+	diagnosticError := res.Error
+	if view, ok := data.(model.LibraryView); ok && diagnosticError == nil {
+		diagnosticError = view.Error
+	}
+	if diagnosticError != nil {
 		safeAction := action
 		if len(safeAction) > 40 {
 			safeAction = "unknown"
@@ -52,7 +62,7 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 			safeAction = "unknown"
 		}
 		s.mu.Lock()
-		s.log = append(s.log, diagnosticEvent{Time: model.Now(), Action: safeAction, Code: res.Error.Code})
+		s.log = append(s.log, diagnosticEvent{Time: model.Now(), Action: safeAction, Code: diagnosticError.Code, HTTPStatus: diagnosticError.HTTPStatus, UpstreamCode: diagnosticError.UpstreamCode})
 		if len(s.log) > 100 {
 			s.log = s.log[len(s.log)-100:]
 		}
@@ -126,15 +136,30 @@ func (s *Service) dispatch(ctx context.Context, action, payload string) (any, er
 		return nil, s.SendCode(ctx, v.Phone, v.Area)
 	case "account.login":
 		var v struct {
-			Phone    string `json:"phone"`
-			Area     string `json:"area"`
-			Code     string `json:"code"`
-			Remember bool   `json:"remember"`
+			Epoch    *uint64 `json:"epoch"`
+			Phone    string  `json:"phone"`
+			Area     string  `json:"area"`
+			Code     string  `json:"code"`
+			Remember bool    `json:"remember"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
 		}
+		if v.Epoch != nil {
+			if e := s.checkExperimental(); e != nil {
+				return nil, e
+			}
+			return nil, s.session.LoginAt(ctx, *v.Epoch, v.Phone, v.Area, v.Code, v.Remember)
+		}
 		return nil, s.Login(ctx, v.Phone, v.Area, v.Code, v.Remember)
+	case "account.cancelLogin":
+		var v struct {
+			Epoch uint64 `json:"epoch"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return nil, s.session.CancelLogin(v.Epoch)
 	case "account.restore":
 		return nil, s.Restore(ctx)
 	case "account.logout":

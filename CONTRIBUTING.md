@@ -9,3 +9,5 @@
 修改平台适配器时应说明已核对的来源、日期、授权范围、旧 / 新契约差异以及故障退化行为。禁止用伪造设备、绕过付费、关闭 TLS / CSP 或公共账号代理来“修好”兼容性。
 
 本项目暂不自动更新。没有任何操作会默认向远程仓库推送代码或创建 Release。
+
+项目使用 Go 1.26.8 工具链（最低语言版本 1.26.0）。`scripts/verify-dependencies.ps1` 通过临时 workspace 校验两个模块的下载依赖；不要忽略 missing ziphash 或关闭校验。用户正在使用桌面时用 `build-windows.ps1 -Candidate`，不要启动绑定生成程序或重启用户的应用。真实库测试必须显式设置 STARLING_LIVE_LIBRARY，不能纳入默认 CI。

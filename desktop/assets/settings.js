@@ -1,6 +1,8 @@
-import { call, describeError } from './api.js';
+import { APIError, call, describeError } from './api.js';
 import { qrLogin } from './qr-login.js';
 import { button, el, input } from './dom.js';
+// Reopening the dialog must wait for the previous SMS cancellation and reload.
+let accountCleanup = Promise.resolve();
 function openModal(app, title) {
     const body = document.querySelector('#modal-content');
     body.replaceChildren();
@@ -80,6 +82,8 @@ export function showAccount(app) {
     remember.append(rememberBox, el('span', '', app.boot.session.storageAvailable ? '使用 Windows 系统保护保存会话' : '系统保护不可用，仅本次会话'));
     let timer;
     let busy = false;
+    let disposed = false;
+    let loginEpoch;
     const enable = async () => {
         if (!check.checked)
             throw Error('请先确认实验接入风险。');
@@ -94,7 +98,11 @@ export function showAccount(app) {
         status.textContent = '';
         try {
             await enable();
+            if (disposed)
+                return;
             await call('account.sendCode', { phone: phone.input.value, area: area.input.value });
+            if (disposed)
+                return;
             status.textContent = '已请求发送。请查看手机；客户端不会自动重发。';
             let left = 60;
             send.textContent = `${left}s 后可重发`;
@@ -117,51 +125,91 @@ export function showAccount(app) {
     });
     const submit = el('button', 'button primary', '验证并连接');
     submit.type = 'submit';
-    form.append(phoneRow, send, code.label, remember, status, submit);
+    const cancelLogin = button('取消连接', () => app.modal.close());
+    cancelLogin.hidden = true;
+    form.append(phoneRow, send, code.label, remember, status, submit, cancelLogin);
     body.append(qrLogin(app.modal, rememberBox, async () => {
+        await accountCleanup;
+        if (disposed)
+            return;
         await app.reload();
+        if (disposed)
+            return;
         await enable();
         app.player.pause();
         await app.player.persist();
         app.player.clear();
     }, async () => {
+        if (disposed)
+            return;
         app.player.clear();
         await app.reload();
+        if (disposed)
+            return;
         app.modal.close();
         await app.navigate('favorites');
     }, () => app.reload()));
     body.append(form, el('p', 'fine-print', '验证码只用于这次认证，不保存到 SQLite 或日志。凭据不会返回前端。'));
-    const closeButton = body.querySelector('.modal-head button');
-    app.modal.addEventListener('cancel', e => {
-        if (busy)
-            e.preventDefault();
-    });
     form.addEventListener('submit', e => {
         e.preventDefault();
         if (busy)
             return;
         busy = true;
         submit.disabled = true;
-        closeButton.disabled = true;
-        status.textContent = '正在验证身份；此阶段退出应用可取消连接。';
+        cancelLogin.hidden = false;
+        status.textContent = '正在验证身份，可点击取消连接或关闭此窗口。';
+        const credentials = { phone: phone.input.value, area: area.input.value, code: code.input.value, remember: rememberBox.checked };
+        code.input.value = '';
         void (async () => {
+            await accountCleanup;
+            if (disposed)
+                return;
+            await app.reload();
+            if (disposed)
+                return;
+            loginEpoch = app.boot.session.epoch;
             await enable();
+            if (disposed)
+                return;
             app.player.pause();
             await app.player.persist();
-            const codeValue = code.input.value;
-            code.input.value = '';
-            await call('account.login', { phone: phone.input.value, area: area.input.value, code: codeValue, remember: rememberBox.checked });
+            if (disposed)
+                return;
+            await call('account.login', { epoch: loginEpoch, ...credentials });
+            loginEpoch = undefined;
+            if (disposed)
+                return;
             app.player.clear();
             await app.reload();
+            if (disposed)
+                return;
             app.modal.close();
             await app.navigate('favorites');
-        })().catch(async (e) => { status.textContent = describeError(e); await app.reload().catch(() => { }); }).finally(() => { busy = false; submit.disabled = false; closeButton.disabled = false; });
+        })().catch(async (e) => { if (!disposed) {
+            status.textContent = describeError(e);
+            await app.reload().catch(() => { });
+        } }).finally(() => { credentials.code = ''; busy = false; submit.disabled = false; cancelLogin.hidden = true; });
     });
     app.modal.addEventListener('close', () => {
+        disposed = true;
         if (timer)
             clearInterval(timer);
         phone.input.value = '';
         code.input.value = '';
+        const epoch = loginEpoch;
+        loginEpoch = undefined;
+        if (epoch !== undefined) {
+            accountCleanup = accountCleanup.then(async () => {
+                try {
+                    await call('account.cancelLogin', { epoch });
+                }
+                catch (e) {
+                    if (!(e instanceof APIError && e.code === 'STALE_SESSION'))
+                        app.notice(e);
+                }
+                await app.reload().catch(e => app.notice(e));
+            });
+        }
     }, { once: true });
 }
 export function showSettings(app) {

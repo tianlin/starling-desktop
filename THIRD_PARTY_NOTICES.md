@@ -6,13 +6,15 @@
 
 | 项目 | 使用方式 | 状态 |
 |---|---|---|
-| Wails 2.11.0 | Windows 宿主依赖 | 已完成依赖解析、go.sum 和 Windows 构建；完整传递依赖许可清单仍需整理 |
+| Wails 2.11.0 | Windows 宿主依赖 | 已完成 go.sum、候选构建及二进制依赖清单；许可文本已收集，专业审查仍待完成 |
 | TypeScript 5.8.3 | 构建时编译器 | 实际离线安装并生成 package-lock；node_modules 不随源码包分发 |
 | SQLite | Linux 测试链接系统 libsqlite3；Windows 调用系统 winsqlite3.dll | 不分发 SQLite amalgamation 或 Windows DLL；薄绑定为本项目编写 |
 | Go / Node / Windows WebView2 | 工具链或宿主运行时 | 不随源码包分发 |
 | Chromium / Python Playwright | 本次测试环境 | 不作为客户端运行时分发 |
 
-未因为“依赖看起来商业友好”而宣称完成了全部传递依赖许可审核。公开二进制分发前，应从实际锁定后的完整依赖图生成 SBOM、许可证文本集合，并检查媒体编解码相关运行时条款。
+`node scripts/dependency-report.mjs build/Starling-candidate.exe` 从实际二进制列出运行时 Go 模块，并另列 TypeScript 构建工具；本次共 19 项。`build/compliance/` 包含 CycloneDX SBOM、清单对应的根目录许可证/声明文本和待审状态。未把根许可证收集当作全部嵌套声明、媒体编解码运行时条款或专业许可审核。
+
+2026-09-12 安全修复：Go 工具链锁定 1.26.8；x/net 0.56.0、x/text 0.39.0、x/sys 0.46.0、x/crypto 0.53.0。升级后的实际候选通过 govulncheck 1.8.0 二进制扫描；结果只针对当次漏洞库及文件，不宣称永久无漏洞。
 
 ## 二维码编码依赖
 
@@ -34,10 +36,12 @@
 
 本适配器使用自己的 User-Agent，不复制参考实现中的移动设备、系统版本或设备指纹头。缺失适配、许可争议或平台风控不能通过秘密加入这些伪装字段解决。
 
+收藏请求所需 `x-jike-device-id` 使用本次客户端运行随机生成的 UUID，不源自硬件、不跨进程持久化。参考接口头说明后，以同账号真实最小对照验证该头修复了 400/rpc_error；具体证据与末页契约见 TEST_REPORT。没有复制参考中的手机型号或 OS 字段。
+
 ## 官方技术参考
 
 - https://github.com/wailsapp/wails/tree/v2.11.0/v2/pkg/options — Wails 配置、资源服务、Windows 选项。
 - https://github.com/wailsapp/wails/blob/v2.11.0/v2/pkg/runtime/dialog.go — Wails 对话框 API。
 - https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw — 托盘结构体。
 - https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey — 原生媒体热键注册。
-- https://go.dev/dl/?mode=json — 核对 CI 候选 Go 1.26.5 存在；不宣称抓取结果永远代表最新版本。
+- https://go.dev/dl/?mode=json — 2026-09-12 核对 Go 1.26.8 为受维护分支补丁版本，项目与 CI 固定此版本。

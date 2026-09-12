@@ -14,6 +14,7 @@ export class Application {
     modal = document.querySelector('#modal');
     route = 'home';
     routeGeneration = 0;
+    reloadGeneration = 0;
     list = null;
     listKind = '';
     podcastID = '';
@@ -38,7 +39,7 @@ export class Application {
     async start() {
         this.wire();
         try {
-            this.boot = await call('bootstrap');
+            await this.reload();
             this.desktop = await call('desktop.info').catch(() => this.desktop);
             if (window.__STARLING_DEMO__) {
                 this.desktop.demo = true;
@@ -49,7 +50,7 @@ export class Application {
             if (this.boot.settings.experimentalAccount && this.boot.session.state === 'guest') {
                 try {
                     await call('account.restore');
-                    this.boot = await call('bootstrap');
+                    await this.reload();
                 }
                 catch (e) {
                     this.notice('已保存的账号暂未恢复：' + describeError(e));
@@ -145,7 +146,15 @@ export class Application {
         this.saveSettingsChain = task.catch(() => { });
         await task;
     }
-    async reload() { this.boot = await call('bootstrap'); this.applySettings(); this.drawAccount(); }
+    async reload() {
+        const generation = ++this.reloadGeneration;
+        const boot = await call('bootstrap');
+        if (generation !== this.reloadGeneration || boot.session.epoch < (this.boot?.session.epoch ?? 0))
+            return;
+        this.boot = boot;
+        this.applySettings();
+        this.drawAccount();
+    }
     drawAccount() {
         if (!this.boot)
             return;

@@ -26,22 +26,23 @@ type refreshFlight struct {
 	retryAt time.Time
 }
 type Manager struct {
-	mu          sync.Mutex
-	p           provider.Provider
-	vault       security.Vault
-	epoch       uint64
-	state       string
-	identity    model.Identity
-	credentials model.Credentials
-	persistent  bool
-	ctx         context.Context
-	cancel      context.CancelFunc
-	flight      *refreshFlight
-	jobs        sync.WaitGroup
-	closed      bool
-	qrID        string
-	qrUntil     time.Time
-	qrBusy      bool
+	mu           sync.Mutex
+	p            provider.Provider
+	vault        security.Vault
+	epoch        uint64
+	state        string
+	identity     model.Identity
+	credentials  model.Credentials
+	persistent   bool
+	ctx          context.Context
+	cancel       context.CancelFunc
+	flight       *refreshFlight
+	jobs         sync.WaitGroup
+	closed       bool
+	qrID         string
+	qrUntil      time.Time
+	qrBusy       bool
+	smsBaseEpoch uint64
 }
 
 func New(p provider.Provider, v security.Vault) *Manager {
@@ -68,6 +69,9 @@ func (m *Manager) snapshotLocked() Snapshot {
 func (m *Manager) Snapshot() Snapshot       { m.mu.Lock(); defer m.mu.Unlock(); return m.snapshotLocked() }
 func (m *Manager) begin() (Snapshot, error) { return m.beginAt(m.View().Epoch) }
 func (m *Manager) beginAt(expected uint64) (Snapshot, error) {
+	return m.beginAttempt(expected, false)
+}
+func (m *Manager) beginAttempt(expected uint64, sms bool) (Snapshot, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.epoch != expected {
@@ -86,6 +90,10 @@ func (m *Manager) beginAt(expected uint64) (Snapshot, error) {
 	m.epoch++
 	m.ctx, m.cancel = context.WithCancel(context.Background())
 	m.state = "connecting"
+	m.smsBaseEpoch = 0
+	if sms {
+		m.smsBaseEpoch = expected
+	}
 	m.qrID = ""
 	m.qrUntil = time.Time{}
 	m.qrBusy = false
@@ -111,10 +119,13 @@ func join(request, session context.Context) (context.Context, func()) {
 	return ctx, func() { stop(); cancel() }
 }
 func (m *Manager) Login(ctx context.Context, phone, area, code string, remember bool) error {
+	return m.LoginAt(ctx, m.View().Epoch, phone, area, code, remember)
+}
+func (m *Manager) LoginAt(ctx context.Context, epoch uint64, phone, area, code string, remember bool) error {
 	if remember && !m.vault.Available() {
 		return model.Err("SECURE_STORAGE", "系统保护存储不可用，请取消记住登录。")
 	}
-	s, e := m.begin()
+	s, e := m.beginAttempt(epoch, true)
 	if e != nil {
 		return e
 	}
@@ -132,6 +143,30 @@ func (m *Manager) Login(ctx context.Context, phone, area, code string, remember 
 		return m.finishFailure(s.Epoch, model.Err("IDENTITY_MISMATCH", "登录身份与个人资料不一致，未连接账号。"))
 	}
 	return m.establish(s.Epoch, combined, credentials, actual, remember)
+}
+
+// CancelLogin fences both a queued SMS request and its in-flight attempt.
+// It never clears saved credentials or cancels a QR, restore, or newer login.
+func (m *Manager) CancelLogin(base uint64) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if base == 0 || m.closed {
+		return model.ErrStale
+	}
+	matching := m.smsBaseEpoch == base && m.epoch == base+1
+	if matching && m.identity.ID != "" {
+		return model.Err("LOGIN_COMPLETED", "认证已完成，账号已连接。如需断开，请在账号管理中退出。")
+	}
+	queued := m.epoch == base && m.state == "guest" && m.identity.ID == ""
+	if !queued && !(matching && (m.state == "connecting" || m.state == "guest")) {
+		return model.ErrStale
+	}
+	m.cancel()
+	m.epoch++
+	m.ctx, m.cancel = context.WithCancel(context.Background())
+	m.state = "guest"
+	m.smsBaseEpoch = 0
+	return nil
 }
 func (m *Manager) establish(epoch uint64, ctx context.Context, c model.Credentials, id model.Identity, persistent bool) error {
 	m.mu.Lock()

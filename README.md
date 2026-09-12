@@ -33,7 +33,7 @@
 
 前提：64 位 Windows 11，Go、Node.js/npm，以及可使用的 WebView2 运行时。构建脚本需要访问 Go 模块和 npm 源，不会关闭 TLS / 校验数据库，也不会改变系统脚本执行策略。
 
-语言下限由 `go.mod` 声明为 Go 1.23；本地核心测试环境为 Go 1.23.2 / Node 22.16.0，CI 配置的候选 Go 版本为 1.26.5。Wails 固定为 **2.11.0**，TypeScript 固定为 **5.8.3**，前端有实际生成的 `package-lock.json`。这些是开发基线，不是完成安全审计后的公开发布工具链。
+语言下限由 `go.mod` 声明为 Go 1.26.0，项目工具链与 CI 配置固定 Go 1.26.8；本轮 Windows 验证使用 Go 1.26.8 / Node 24.5.0。Wails 固定为 **2.11.0**，TypeScript 固定为 **5.8.3**，前端有实际生成的 `package-lock.json`。这些是开发基线，不是完成安全审计后的公开发布工具链。
 
 从项目根目录执行：
 
@@ -41,7 +41,9 @@
 powershell -NoProfile -File .\scripts\build-windows.ps1
 ```
 
-脚本先运行核心测试和前端测试，再下载 / 解析 Wails 依赖、构建程序。成功后输出到 `build\Starling.exe`，并生成 SHA-256 清单。根模块和 Wails 子模块的实际 `go.sum` 均已纳入源码。构建前请退出正在运行的 Starling，避免绑定生成触发单实例检查。
+项目要求 Go 1.26.0 以上，工具链锁定 1.26.8。脚本在临时双模块 workspace 中下载并校验依赖，分别运行根模块和宿主的测试/静态检查及前端测试，再构建程序。成功后输出到 `build\Starling.exe`，并生成 SHA-256 清单。两个模块的实际 `go.sum` 均已纳入源码。常规构建前请退出 Starling，避免绑定生成触发单实例检查。
+
+需要保持当前程序运行、避免桌面被打扰时，可使用 `powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate`。它跳过绑定生成、输出 `build\Starling-candidate.exe` 和独立哈希清单，不启动、关闭或替换现有程序。如果默认候选也在运行，可追加 `-CandidateName Starling-candidate-r2`，生成另一个文件和独立哈希清单；脚本仍拒绝覆盖运行中的同名目标。当前 JSON `Call` 桥签名未变；修改宿主绑定签名后，应在方便时执行常规构建验证。
 
 脚本执行受组织策略限制时，按组织批准方式执行，不需要为了使用项目而关闭系统安全功能。也可以逐条运行相同命令：
 
@@ -53,7 +55,8 @@ cd frontend
 npm ci --ignore-scripts
 npm test
 cd ../desktop
-go mod tidy
+go test ./...
+go vet ./...
 go run github.com/wailsapp/wails/v2/cmd/wails@v2.11.0 build -platform windows/amd64 -clean
 ```
 
@@ -87,12 +90,24 @@ go run ./cmd/demo
 ## 测试
 
 ```sh
-go test -race ./...       # 本次在 Linux + 系统 SQLite 上执行
+go test ./...             # 根模块，联网测试默认跳过
+go test -race ./...       # 需要支持 CGo 的工具链；历史 Linux 结果不代表当前 Windows 已执行
 go vet ./...
 cd frontend && npm test   # 严格 TypeScript 编译 + Node 内置测试
 ```
 
-浏览器集成测试需安装 Python Playwright 和 Chromium，然后在根目录运行 `python tests/e2e/run.py`。设置 `CHROMIUM_PATH` 指向浏览器；本环境禁止浏览器访问本地 HTTP 页，因此实际使用了 `STARLING_E2E_IN_MEMORY=1` 的受控内存测试页与合成 Blob 音频。它验证前端和 Go 业务交互，**不等于原生 Wails / WebView2 实机测试**。详见 [测试报告](docs/TEST_REPORT.md)。
+浏览器集成测试需安装 Python Playwright 和 Chromium，然后在根目录运行 `python tests/e2e/run.py`。可设置 `CHROMIUM_PATH` 指向浏览器；默认使用 Playwright 安装的 Chromium。测试使用 headless、静音和独立临时配置，不操作用户浏览器；截图与结果保存在 `docs/test-results/`。本次 Windows Headless Chrome 直接连接本机合成后端，13 项通过；其中 2 项取消竞态使用 HTTP 响应拦截，仅在直连模式运行；历史受控内存测试路径可通过 `STARLING_E2E_IN_MEMORY=1` 使用。两者均**不等于原生 Wails / WebView2 实机测试**。
+
+经明确授权后，可单独进行真实库只读检查：设置 `$env:STARLING_LIVE_LIBRARY='1'` 后运行 `go test ./internal/provider -run '^TestLiveLibraryReadOnly$' -v -count=1`，完成后移除该环境变量。只读本应用自己的受保护会话，不续期或写回凭据；输出页数和条数，不输出账号或内容。本次真实收藏/订阅分页已通过，手机端核对仍待完成。
+
+发布前检查实际候选文件：
+
+```powershell
+go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 -mode=binary build/Starling-candidate.exe
+node scripts/dependency-report.mjs build/Starling-candidate.exe
+```
+
+依赖材料保存在 `build/compliance/`，包括 CycloneDX 清单与许可证文本。脚本校验候选二进制与当前依赖版本一致；许可证收集不代替专业审查。最新证据见 [测试报告](docs/TEST_REPORT.md)，全部遗留项见 [遗留工作](docs/REMAINING_WORK.md)。
 
 ## 目录
 

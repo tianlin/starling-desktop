@@ -4,20 +4,48 @@
 
 ## 当前 Windows 验证
 
-环境：Windows x64、Go 1.23.12、Node.js 24.5.0、TypeScript 5.8.3、Wails 2.11.0。根目录测试不会自动覆盖 desktop 嵌套模块。
+环境：Windows x64、Go 1.26.8、Node.js 24.5.0、TypeScript 5.8.3、Wails 2.11.0。根目录测试不会自动覆盖 desktop 嵌套模块。以下新结果针对工作区候选版本；没有操作桌面窗口或启动候选程序。
 
 | 检查 | 结果与范围 |
 |---|---|
-| 根模块 go test ./... | 通过；包含 Windows 下实际运行的核心与原生测试 |
+| 根模块 go test -json -count=1 ./... | 65 个测试/子测试通过，2 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
 | 根模块 go vet ./... | 通过 |
-| frontend 中 npm test | TypeScript 编译和 10 项 Node 测试通过 |
-| Wails windows/amd64 production build | 已成功构建完整 Starling.exe；实际依赖校验文件已生成 |
-| 应用启动 | 已创建主窗口，进程响应正常；不等于完整 UI/播放验收 |
+| frontend 中 npm test | TypeScript 编译和 13 项 Node 测试通过 |
+| desktop 模块 go test ./... / go vet ./... | 通过编译与静态检查；宿主尚无专用测试文件 |
+| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r2 | 全流程通过，输出独立 Starling-candidate-r2.exe；跳过绑定生成，未启动应用 |
+| 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
+| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，13 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
+| 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
+| 依赖材料 | 实际二进制 18 个外部 Go 模块＋TypeScript 构建工具，共 19 项；CycloneDX 清单与根目录许可证/声明文本已生成，无缺失根许可证文本 |
+| 独立代码检查 | 只读审查和离线 provider/app 测试通过；非 CodeRabbit 报告，未替代实机验收 |
+| 应用启动 | 历史版本曾创建主窗口；本次候选程序未启动，以免干扰用户桌面 |
 | 官方二维码接口 | 实际客户端成功创建二维码并取得 WAITTING 状态 |
 | 扫码状态回归 | CONFIRMED/USED 均进入凭据解析；无完整凭据拒绝连接；401/code 21 按过期处理 |
 | 会话回归 | 未确认不连接、身份不一致拒绝连接、取消和旧二维码不能干扰后续会话 |
 
-真实手机扫码曾暴露 USED 状态误判，现已修复并通过回归测试。修正后的真实账号、订阅、收藏和播放完整链路仍待验收，不能据此宣称账号接入成功。
+真实手机扫码曾暴露 USED 状态误判，已修复并通过回归测试。本次读取 Starling 自身保存的会话完成订阅和收藏接口检查；没有重新扫码，也没有进行凭据续期、轮换或写回。完整登录到实机播放链路仍待验收。
+
+## 收藏故障与真实分页证据
+
+适配器版本：`xyz-readonly-2026-09-12.1`。2026-09-12 对同一已保存会话进行最小对照：
+
+- 原收藏请求：HTTP 400、业务码 1、`rpc_error`；去掉 limit 仍失败，同会话订阅可用。
+- 保持原请求体、令牌和 Starling User-Agent，仅加入客户端生成的 UUID `x-jike-device-id`：HTTP 200，首屏 10 条收藏，随后空末页。
+- 订阅：首屏 30 条、末页 10 条。两类首屏均含 loadMoreKey，末页均只有 data；没有 hasMore。按实测的私有库适配规则识别省略游标的末页，通用解析器和节目单集列表仍保留未知结束状态。
+- 显式手动测试遍历两类列表通过，未发现重复 ID。只输出页数、条目数和结构字段，不输出标题、账号、令牌、原始响应或签名音频地址。
+- 手机端同期数量核对、其他账号与更大收藏库未验收，不能把这次 10 / 40 的计数当作所有账号的完整性证明。
+
+新增回归覆盖设备 UUID 每客户端稳定且相互独立、不伪装手机、私有库末页规则、异常分页不被覆盖、嵌套错误进入诊断、错误时保留缓存、内存缓存过期和缓存文案。
+
+候选文件 `build/Starling-candidate-r2.exe` SHA-256：`37ef23db2460a8ef68d5d38fd159ad46ab81cd9f8a2d4383b2405de301852fd8`。
+
+本机证据位于 `build/core-tests.jsonl`、`build/vulnerabilities-after.txt`、`build/compliance/`、`docs/test-results/`（均为不提交的构建/测试产物）。不提交真实账号响应。
+
+## 短信认证取消回归
+
+认证提交后可点击“取消连接”、关闭按钮或按 Escape。取消按发起前的会话代次绑定，仅影响该短信尝试；排队请求和迟到凭据均不能建立会话，不清除已保存凭据，也不影响二维码、恢复或后续登录。若后端已完成认证，界面明确提示账号已连接，不隐式退出。
+
+新增 4 项 Go 测试覆盖取消排队请求、取消在途请求后迟到凭据、其他认证类型隔离、已完成/后续登录保护；2 项前端测试覆盖普通刷新和启动恢复的旧 bootstrap 响应不能覆盖新账号。浏览器新增取消后重开并登录、认证成功响应迟到时 Escape 关闭和重开弹窗两项场景。独立审查发现的两处旧 bootstrap 覆盖问题已复现、修复并复核通过。所有登录均使用合成账号，没有发送真实短信；官方人机验证流程和原生 WebView2 交互仍待验证。
 
 ## 历史合成测试
 
@@ -27,14 +55,14 @@
 
 ## 已知限制
 
-- Go 1.23.12 下曾出现 go mod verify 对本地 replace 模块 starling v0.0.0 报 missing ziphash；随后独立 Wails 构建成功。仓库构建脚本保留该检查，因此此检查问题仍需定位，不能声称脚本全流程通过。
-- 构建前应退出正在运行的 Starling，避免 Wails 绑定生成程序触发单实例检查。
+- 原 Go 1.23.12 候选二进制扫描命中 56 个漏洞记录；更新到 Go 1.26.8 和修复后的 x/net、x/sys、x/text 依赖后，新候选扫描通过。旧程序不会自动替换，不能继续分发旧二进制。
+- 常规构建须先退出 Starling；后台使用 -Candidate 构建独立文件，跳过绑定生成。本次未执行常规绑定生成流程。检测到旧 Starling-candidate 正在运行后，改用 -CandidateName 输出 r2，保留运行中的程序。
 - 没有独立 CodeRabbit 报告。历史环境中 CLI 缺失、安装源解析失败；不把本地人工检查称作 CodeRabbit 审查。
 - GitHub Actions 的通过状态应以远端运行结果为准，配置文件存在不等于 CI 成功。
 - 托盘、媒体键、睡眠、设备切换、长时播放、安装卸载及不同 DPI 尚未完成完整实机验收。
-- 依赖许可汇总、签名及平台接入边界仍需继续审查。
+- 许可证文本已收集，但嵌套声明、运行时许可、专业审查、签名及平台接入边界仍需继续处理。
 
-完整验收项见 [真实环境清单](REAL_ENVIRONMENT_CHECKLIST.md)，扫码说明见 [QR_LOGIN.md](QR_LOGIN.md)。
+完整验收项见 [真实环境清单](REAL_ENVIRONMENT_CHECKLIST.md)，后续顺序见 [遗留工作](REMAINING_WORK.md)，扫码说明见 [QR_LOGIN.md](QR_LOGIN.md)。
 
 ## 演示截图
 

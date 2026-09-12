@@ -20,6 +20,15 @@ func cloneView(v model.LibraryView) model.LibraryView {
 	return v
 }
 
+func cachedView(v model.LibraryView) model.LibraryView {
+	v = cloneView(v)
+	v.Status = "cached"
+	if at, e := time.Parse(time.RFC3339Nano, v.UpdatedAt); e != nil || time.Since(at) > 10*time.Minute {
+		v.Status = "stale"
+	}
+	return v
+}
+
 // Library stages partial pages in memory. Only a proven end replaces the complete SQLite snapshot.
 func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode string) (model.LibraryView, error) {
 	var out model.LibraryView
@@ -50,6 +59,9 @@ func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode str
 		if mode == "cached" {
 			if stage != nil {
 				out = cloneView(stage.view)
+				if out.Complete && out.Error == nil {
+					out = cachedView(out)
+				}
 				return nil
 			}
 			cached := model.LibraryView{Items: []model.Item{}, Status: "idle", Epoch: epoch}
@@ -59,10 +71,7 @@ func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode str
 			}
 			cached.Epoch = epoch
 			if ok {
-				cached.Status = "cached"
-				if at, e := time.Parse(time.RFC3339Nano, cached.UpdatedAt); e != nil || time.Since(at) > 10*time.Minute {
-					cached.Status = "stale"
-				}
+				cached = cachedView(cached)
 			}
 			out = cached
 			return nil
