@@ -91,4 +91,3 @@ try {
     if (-not $Resolved.StartsWith($TempBase, [StringComparison]::OrdinalIgnoreCase) -or [IO.Path]::GetFileName($Resolved) -notmatch '^starling-install-test-[a-f0-9]{32}$') { throw 'Unsafe test cleanup path.' }
     if (Test-Path -LiteralPath $Resolved) { Remove-Item -LiteralPath $Resolved -Recurse -Force }
 }
-
