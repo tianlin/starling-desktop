@@ -1,6 +1,6 @@
 import type { Application } from './shell.js';
 import { APIError, call, describeError } from './api.js';
-import type { Item } from './types.js';
+import type { Item, ProgressSyncStatus } from './types.js';
 import { qrLogin } from './qr-login.js';
 import { button, el, input, icon } from './dom.js';
 // Reopening the dialog must wait for the previous SMS cancellation and reload.
@@ -211,6 +211,27 @@ export function showSettings(app: Application) {
         return;
     } app.boot.settings.experimentalAccount = false; void app.saveSettings().catch(e => app.notice(e)); });
     section('账号接入', '默认关闭。启用前阅读账号风控与非官方接口风险。连接后可查看评论；点击“发表评论”会以当前账号发送公开评论。', enabled);
+    const syncEnabled = el('input');
+    syncEnabled.type = 'checkbox';
+    syncEnabled.checked = !app.boot.settings.progressSyncDisabled;
+    syncEnabled.setAttribute('aria-label', '自动同步收听进度');
+    const syncStatus = el('p', 'muted', '正在读取同步状态…');
+    syncStatus.setAttribute('role', 'status');
+    const syncEpoch = app.boot.session.epoch;
+    const refreshSync = async (retry = false) => {
+        try {
+            const status = await call<ProgressSyncStatus>(retry ? 'progress.retry' : 'progress.status', { epoch: syncEpoch });
+            if (!syncStatus.isConnected || syncEpoch !== app.boot.session.epoch) return;
+            const labels = { idle: '等待同步', syncing: '正在同步', synced: '已同步', pending: '等待上传', error: '同步暂不可用', conflict: '请在播放器中选择继续位置', disabled: '自动同步已关闭' };
+            syncStatus.textContent = labels[status.state] + (status.pending ? ' · 待同步 ' + status.pending + ' 集' : '') + (status.lastSuccess ? ' · 上次成功：' + new Date(status.lastSuccess).toLocaleString() : '') + (status.message ? ' · ' + status.message : '');
+        } catch (e) { if (syncStatus.isConnected) syncStatus.textContent = describeError(e); }
+    };
+    syncEnabled.addEventListener('change', () => {
+        app.boot.settings.progressSyncDisabled = !syncEnabled.checked;
+        void app.saveSettings().then(() => refreshSync()).catch(e => app.notice(e));
+    });
+    section('自动同步收听进度', '连接账号后自动同步，可与手机接续收听；关闭后仍保存本机进度。', syncEnabled, syncStatus, button('重试同步', () => { void refreshSync(true); }));
+    void refreshSync();
     section('恢复已保存会话', '只读取本应用自身的受保护凭据，不读取其他应用或浏览器的登录状态。', button('尝试恢复', () => { void call('account.restore').then(() => app.reload()).then(() => app.navigate('settings')).catch(e => app.notice(e)); }));
     if (app.boot.session.storageWarning) section('会话保存失败', app.boot.session.storageWarning);
     if (app.desktop.platform === 'darwin') {
@@ -232,6 +253,10 @@ export function showSettings(app: Application) {
     section('本地诊断', '仅保存本次进程最近 100 条业务错误码，不包含账号、令牌或收听内容。', button('查看诊断', () => { void call('diagnostics').then(data => { const body = openModal(app, '诊断预览'); body.append(el('pre', 'diagnostics', JSON.stringify(data, null, 2)), button('保存到文件', () => { void call('desktop.exportDiagnostics').then(() => app.notice('诊断保存操作已结束。')).catch(e => app.notice(e)); })); }).catch(e => app.notice(e)); }));
     section('重置全部本地数据', '清除本应用凭据、账号与访客书签、队列、进度和设置。无法撤销；不承诺取证级安全擦除。', button('重置数据', () => { if (!confirm('确定清除 Starling 的全部本地数据？此操作无法撤销。'))
         return; app.player.pause(); void app.player.persist().then(() => call('data.reset', { epoch: app.boot.session.epoch, confirm: 'RESET' })).then(() => { app.player.clear(); return app.reload(); }).then(() => app.navigate('home')).catch(e => app.notice(e)); }, 'button danger'));
-    section('关于 Starling · 星听', `${app.boot.version} · ${app.boot.adapter}。非官方开源客户端，与小宇宙无隶属或授权关系。仅在本机处理数据；正常播放仍会请求平台或 CDN。`);
+    section('关于 Starling · 星听', `${app.boot.version} · ${app.boot.adapter}。非官方开源客户端，与小宇宙无隶属或授权关系。凭据保存在本机；开启进度同步后会向小宇宙同步收听位置。播放会请求平台或 CDN。`);
     app.page.append(panel);
+    const syncTimer = setInterval(() => {
+        if (!syncStatus.isConnected || syncEpoch !== app.boot.session.epoch) { clearInterval(syncTimer); return; }
+        void refreshSync();
+    }, 5000);
 }

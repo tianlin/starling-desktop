@@ -120,3 +120,10 @@ node scripts/dependency-report.mjs build/Starling-candidate-020.exe
 候选下载（GitHub Actions artifact，可能需要登录 GitHub）：[Apple Silicon](https://github.com/tianlin/starling-desktop/actions/runs/34717600249/artifacts/10305171941)、[Intel](https://github.com/tianlin/starling-desktop/actions/runs/34717600249/artifacts/10304933187)。每个压缩包内包含对应 DMG、SHA256SUMS.txt、构建环境、校验/启动日志和依赖材料。制品有保留期限，并非永久 Release 附件。
 
 上述启动冒烟不播放真实节目，不登录真实账号；拒绝把六秒超时退出视为正常保存握手。macOS 14 实机、Gatekeeper 首次下载提示、实际音频、Dock/菜单栏交互、系统睡眠和长时播放仍需用户按 MACOS.md 验收。
+## 0.4.0 播放进度同步（2026-09-13）
+
+- 根 Go 模块与独立 desktop 模块的测试、vet 通过，前端类型检查和 116 项测试通过。
+- Windows MinGW 环境的 app/provider/session race 测试通过。
+- Windows `Starling-candidate-040.exe` 构建及 0.4.0 文件/产品版本资源检查通过；SHA-256：`03eec3f51ad15f4fb8f320bf6baa8a0bfd881204a54d971a3c1c9c94170d6c6a`。
+- 真实手机云端位置读取通过；候选应用自动上传后，用户确认 iPhone 接着播放。详细证据及剩余多轮延迟/误差、离线和倒回重听验收见 [PROGRESS_SYNC.md](PROGRESS_SYNC.md)。
+- 本节不代表新的 macOS 实机验证、签名验证或所有发布指标已通过；历史版本记录保留如下。

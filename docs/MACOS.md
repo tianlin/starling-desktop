@@ -1,10 +1,10 @@
-# Starling 0.3.0 macOS 候选版
+# Starling 0.4.0 macOS 候选版
 
 目标系统为 macOS 14 及以上，分别提供 Apple Silicon（arm64）和 Intel（amd64）应用包。核心业务与 Windows 共用。候选包使用 ad-hoc 签名，未进行 Developer ID 签名或 Apple 公证；构建成功不代表已通过所有 Mac 实机验收。
 
 ## 安装与首次打开
 
-下载与芯片匹配的 `Starling-0.3.0-macos-arm64.dmg` 或 `Starling-0.3.0-macos-amd64.dmg`，同时下载该构建的 `SHA256SUMS.txt`，在下载目录运行 `shasum -a 256 -c SHA256SUMS.txt`。
+下载与芯片匹配的 `Starling-0.4.0-macos-arm64.dmg` 或 `Starling-0.4.0-macos-amd64.dmg`，同时下载该构建的 `SHA256SUMS.txt`，在下载目录运行 `shasum -a 256 -c SHA256SUMS.txt`。
 
 打开 DMG，将 `Starling.app` 拖入 Applications，然后从“应用程序”启动。未公证应用可能被 Gatekeeper 阻止；核对来源与哈希后，可在系统设置“隐私与安全性”中使用系统提供的“仍要打开”。受管理设备可能禁止此操作。不要关闭 Gatekeeper、SIP 或全局安全检查，也不要删除隔离属性来绕过组织策略。
 
@@ -39,7 +39,7 @@ bash scripts/build-macos.sh
 本次唯一 `App.Call` 绑定签名未变，候选构建跳过绑定生成。修改绑定签名时，需要在隔离的开发环境重新生成绑定并验证。
 
 ```sh
-bash scripts/smoke-macos.sh build/macos-arm64/Starling-0.3.0-macos-arm64.dmg
+bash scripts/smoke-macos.sh build/macos-arm64/Starling-0.4.0-macos-arm64.dmg
 ```
 
 启动冒烟从 DMG 复制应用，在临时 HOME 中以访客启动，检查 WebView 就绪、数据库创建及 Apple 退出事件；不会启用账号或执行平台写入。钥匙串原生测试单独创建临时钥匙串并只写合成数据。此自动化不验证实际出声、扫码结果或长期稳定性。

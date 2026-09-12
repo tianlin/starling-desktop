@@ -1,6 +1,6 @@
 # Starling · 星听
 
-面向 **Windows 11 x64 与 macOS 14+（Apple Silicon / Intel）** 的非官方小宇宙桌面客户端，当前版本 **0.3.0**。macOS 为待实机验收的候选支持，提供双架构 DMG。支持个人库、订阅更新、探索、评论与本机连续收听，提供便携程序和当前用户安装脚本。
+面向 **Windows 11 x64 与 macOS 14+（Apple Silicon / Intel）** 的非官方小宇宙桌面客户端，当前版本 **0.4.0**。macOS 为待实机验收的候选支持，提供双架构 DMG。支持个人库、订阅更新、探索、评论与本机连续收听，提供便携程序和当前用户安装脚本。
 
 独立界面采用 Go + Wails 2 + TypeScript + SQLite，没有项目方账号服务器。原创代码采用 MIT；平台内容与商标不在该许可证授权范围内。Windows 构建未签名，macOS 候选仅使用 ad-hoc 签名且未公证，未经过外部安全审计；验证证据和实机边界分别见 [测试报告](docs/TEST_REPORT.md) 和 [后续验证](docs/REMAINING_WORK.md)。
 
@@ -17,6 +17,7 @@
 | 公开链接 / 详情 | 完整节目或单集链接、清洗后的说明和时间点；公开节目页可能只提供部分单集 |
 | 评论 | 登录后按热门 / 最新阅读、展开回复、发表文字及回复；最新采用服务器 TIME 顺序，不保证跨样本严格时间降序。见 [评论契约](docs/COMMENTS_API.md) |
 | 播放与本地状态 | 播放暂停、拖动、后退 15 秒 / 前进 30 秒、倍速、音量、书签、队列、断点续播；重启不自动播放 |
+| 手机接力续播 | 同账号同步单集进度，登录后默认开启；设置可关闭、查看状态或重试。详见 [播放进度同步](docs/PROGRESS_SYNC.md) |
 | Windows 集成 | 托盘、媒体键、睡眠暂停、单实例、用户级 DPAPI 和系统 SQLite；不同设备及 WebView2 的验证边界见测试报告 |
 
 | macOS 集成 | 菜单栏、隐藏窗口继续播放、Dock 恢复、睡眠暂停、单实例、系统钥匙串与 SQLite；全局媒体键暂不提供 |
@@ -46,7 +47,7 @@ powershell -NoProfile -File .\scripts\build-windows.ps1
 需要保留当前程序运行时，使用独立候选构建：
 
 ```powershell
-powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate -CandidateName Starling-candidate-030
+powershell -NoProfile -File .\scripts\build-windows.ps1 -Candidate -CandidateName Starling-candidate-040
 ```
 
 候选构建跳过绑定生成，输出独立 EXE 和哈希，不启动或替换现有程序，并拒绝覆盖运行中的同名目标。修改宿主绑定签名后需补做常规构建。

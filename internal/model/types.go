@@ -100,10 +100,11 @@ type Progress struct {
 	UpdatedAt string  `json:"updatedAt"`
 }
 type Settings struct {
-	Volume              float64 `json:"volume"`
-	Rate                float64 `json:"rate"`
-	CloseBehavior       string  `json:"closeBehavior"`
-	ExperimentalAccount bool    `json:"experimentalAccount"`
+	ProgressSyncDisabled bool    `json:"progressSyncDisabled"`
+	Volume               float64 `json:"volume"`
+	Rate                 float64 `json:"rate"`
+	CloseBehavior        string  `json:"closeBehavior"`
+	ExperimentalAccount  bool    `json:"experimentalAccount"`
 }
 
 func DefaultSettings() Settings { return Settings{Volume: .8, Rate: 1, CloseBehavior: "ask"} }

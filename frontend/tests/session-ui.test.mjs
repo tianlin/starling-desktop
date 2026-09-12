@@ -23,7 +23,7 @@ test('failed final persistence never acknowledges successful quit', async () => 
     Object.defineProperty(globalThis,'navigator',{value:{},configurable:true});
     globalThis.window={runtime:{EventsOn:(name,fn)=>callbacks.set(name,fn)},go:{main:{App:{Call:async action=>{calls.push(action);return JSON.stringify({ok:true});}}}}};
     const app=Object.assign(Object.create(Application.prototype),{
-        player:{pause(){},persist:async()=>{throw Error('synthetic disk failure');}},notice:e=>errors.push(e.message),
+        boot:{session:{epoch:1}},player:{pause(){},persist:async()=>{throw Error('synthetic disk failure');}},notice:e=>errors.push(e.message),
     });
     try {
         app.nativeEvents(); callbacks.get('desktop:before-quit')();
@@ -32,7 +32,7 @@ test('failed final persistence never acknowledges successful quit', async () => 
         app.player.persist=async()=>{};
         callbacks.get('desktop:before-quit')();
         await new Promise(resolve=>setImmediate(resolve));
-        assert.deepEqual(calls,['desktop.quitReady']);
+        assert.deepEqual(calls,['progress.flush','desktop.quitReady']);
     } finally {
         delete globalThis.window;
         if(oldNavigator) Object.defineProperty(globalThis,'navigator',oldNavigator); else delete globalThis.navigator;

@@ -53,6 +53,7 @@ export interface Settings {
     rate: number;
     closeBehavior: 'ask' | 'tray' | 'exit';
     experimentalAccount: boolean;
+    progressSyncDisabled?: boolean;
 }
 export interface Progress {
     item: Item;
@@ -105,3 +106,15 @@ export type SubscriptionState = 'subscribed' | 'not_subscribed' | 'unknown';
 export interface SearchPage { items: Item[]; users: Creator[]; subscriptions: Record<string, SubscriptionState>; cursor: string; complete: boolean }
 export interface CreatorPage { creator: Creator; items: Item[]; subscriptions: Record<string, SubscriptionState>; cursor: string; complete: boolean }
 export interface SubscriptionResult { podcastId: string; state: SubscriptionState; item?: Item; warning?: AppFailure }
+
+export interface ProgressSyncStatus {
+    state: 'idle' | 'syncing' | 'synced' | 'pending' | 'error' | 'conflict' | 'disabled';
+    lastSuccess?: string;
+    message?: string;
+    pending: number;
+}
+export interface ProgressPreparation {
+    position: number;
+    sync: ProgressSyncStatus;
+    conflict?: { localPosition: number; cloudPosition: number; token: string };
+}

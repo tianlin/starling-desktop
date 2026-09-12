@@ -90,6 +90,9 @@ func (s *Service) localList(epoch uint64, kind, op string, it model.Item) ([]mod
 	return out, e
 }
 func (s *Service) SaveProgress(epoch uint64, p model.Progress) error {
+	return s.SaveProgressUrgent(epoch, p, false)
+}
+func (s *Service) SaveProgressUrgent(epoch uint64, p model.Progress, urgent bool) error {
 	if p.Item.Kind != "episode" || math.IsNaN(p.Position) || math.IsInf(p.Position, 0) || p.Position < 0 || p.Position > 7*86400 || math.IsNaN(p.Duration) || math.IsInf(p.Duration, 0) || p.Duration < 0 || p.Duration > 7*86400 || (p.Duration > 0 && p.Position > p.Duration+1) {
 		return model.Err("INVALID_PROGRESS", "播放位置或时长无效。")
 	}
@@ -99,7 +102,38 @@ func (s *Service) SaveProgress(epoch uint64, p model.Progress) error {
 	}
 	p.Item = it
 	p.UpdatedAt = model.Now()
-	return s.session.Commit(epoch, func(scope string) error { return s.store.Put(scope, "progress", p.Item.ID, p) })
+	e = s.session.Commit(epoch, func(scope string) error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		r, e := s.loadProgress(scope, p.Item.ID)
+		if e != nil {
+			return e
+		}
+		if r.Local.Item.ID != "" && r.Local.Position == p.Position && r.Local.Duration == p.Duration && r.Local.Ended == p.Ended {
+			if s.settings.ProgressSyncDisabled && r.Pending != nil {
+				r.Pending = nil
+				r.Revision++
+				r.ReadyRevision = 0
+				return s.putProgress(scope, p.Item.ID, r)
+			}
+			return nil
+		}
+		r.Local = p
+		r.Revision++
+		r.ReadyRevision = 0
+		r.Conflict = nil
+		r.ConflictToken = ""
+		if scope != "guest" && !s.settings.ProgressSyncDisabled {
+			r.Pending = cloudOf(p)
+		} else {
+			r.Pending = nil
+		}
+		return s.putProgress(scope, p.Item.ID, r)
+	})
+	if e == nil && urgent {
+		s.wakeProgress()
+	}
+	return e
 }
 func (s *Service) Detail(ctx context.Context, epoch uint64, kind, id string) (model.Item, error) {
 	if snap := s.session.Snapshot(); snap.Epoch != epoch {
@@ -229,10 +263,11 @@ func (s *Service) resolve(ctx context.Context, epoch, generation uint64, id, req
 		if s.playID != requestID || s.playGeneration != generation || requestCtx.Err() != nil {
 			return model.Err("CANCELLED", "播放请求已取消。")
 		}
-		var p model.Progress
-		if _, e := s.store.Get(scope, "progress", id, &p); e != nil {
+		r, e := s.loadProgress(scope, id)
+		if e != nil {
 			return e
 		}
+		p := r.Local
 		if !p.Ended {
 			out.Position = p.Position
 		}
