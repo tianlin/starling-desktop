@@ -61,6 +61,7 @@ static int starlingAvailable(SecKeychainRef chain) {
  if(keychain) CFRelease(keychain); return status==errSecSuccess;
 }
 static void starlingFree(void *data,long size) { if(data) { memset(data,0,size); free(data); } }
+static void starlingReleaseKeychain(SecKeychainRef chain) { CFRelease(chain); }
 */
 import "C"
 import (
@@ -79,7 +80,7 @@ func openIsolatedKeychain(path string) (nativeKeychain, func(), error) {
 	if e := keychainError(C.SecKeychainOpen(p, &chain)); e != nil {
 		return nativeKeychain{}, func() {}, e
 	}
-	return nativeKeychain{chain: chain}, func() { C.CFRelease(C.CFTypeRef(chain)) }, nil
+	return nativeKeychain{chain: chain}, func() { C.starlingReleaseKeychain(chain) }, nil
 }
 
 func NewVault(path string) Vault         { return newKeychainVault(path, nativeKeychain{}) }
