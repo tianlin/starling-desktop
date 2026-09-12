@@ -360,6 +360,8 @@ export function renderDiscovery(c: DiscoveryController, card: (item: Item) => HT
     }
     else if (s.page && !s.page.complete && !s.loading)
         root.append(el('p', 'inline-warning', '平台未提供下一页游标或明确结束标志，无法确认是否已加载全部结果。'));
+    else if (s.page?.complete && !s.loading && !s.error && (s.page.items.length || s.page.users.length))
+        root.append(el('p', 'muted', '已显示本次搜索的全部结果'));
     return root;
 }
 function creatorArt(c: Creator) { return cover({ id: c.id, title: c.nickname, image: c.avatar, kind: 'podcast', sourceUrl: '', restricted: false }, true); }

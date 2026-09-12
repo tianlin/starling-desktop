@@ -105,6 +105,8 @@ try:
         page.get_by_role('button',name='加载更多结果',exact=True).click()
         expect(page.locator('#page .episode-card')).to_have_count(8)
         expect(page.get_by_role('button',name='加载更多结果',exact=True)).not_to_be_visible()
+        expect(page.locator('#page')).to_contain_text('已显示本次搜索的全部结果')
+        expect(page.locator('#page')).not_to_contain_text('无法确认是否已加载全部结果')
         results.append('PASS: pagination failure retains items and retry reaches deduplicated terminal page')
 
         page.locator('#discovery-tab-podcast').click()

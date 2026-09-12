@@ -14,6 +14,54 @@ import (
 const discoveryPID = "6013f9f58e2f7ee375cf4216"
 const discoveryUID = "5fa391a5e0f5e723bbd34c78"
 
+func TestDiscoveryOmittedPaginationEndsSearch(t *testing.T) {
+	for _, kind := range []model.SearchKind{model.SearchPodcast, model.SearchEpisode, model.SearchUser} {
+		for _, count := range []int{0, 1, 20} {
+			for _, continuation := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/rows%d/continuation%v", kind, count, continuation), func(t *testing.T) {
+					calls := 0
+					c := fixtureClient(t, func(w http.ResponseWriter, r *http.Request) {
+						calls++
+						field := "pid"
+						if kind == model.SearchEpisode {
+							field = "eid"
+						}
+						if kind == model.SearchUser {
+							field = "uid"
+						}
+						rows := []map[string]string{}
+						n := count
+						if continuation && calls == 1 {
+							n = 1
+						}
+						for i := 0; i < n; i++ {
+							rows = append(rows, map[string]string{field: fmt.Sprintf("%024x", i+1)})
+						}
+						env := map[string]any{"data": rows, "highlightWord": map[string]any{"words": []string{"测试"}}}
+						if continuation && calls == 1 {
+							env["loadMoreKey"] = map[string]any{"loadMoreKey": 20, "searchId": "synthetic"}
+						}
+						json.NewEncoder(w).Encode(env)
+					})
+					p, e := c.Search(context.Background(), "token", "测试", kind, "")
+					if e != nil {
+						t.Fatal(e)
+					}
+					if continuation {
+						if p.Complete || p.Cursor == "" {
+							t.Fatalf("lost continuation: %+v", p)
+						}
+						p, e = c.Search(context.Background(), "token", "测试", kind, p.Cursor)
+					}
+					if e != nil || !p.Complete || p.Cursor != "" || len(p.Items)+len(p.Users) != count {
+						t.Fatalf("terminal page: %+v error=%v", p, e)
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestDiscoveryWrappedUsersRejectRawOverflowAndEmptyContinuation(t *testing.T) {
 	user := fmt.Sprintf(`{"uid":%q}`, discoveryUID)
 	many := strings.TrimSuffix(strings.Repeat(user+",", 200), ",")
@@ -141,7 +189,7 @@ func TestDiscoveryInvalidPages(t *testing.T) {
 	}
 	c := fixtureClient(t, func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, `{"data":[]}`) })
 	p, e := c.Search(context.Background(), "token", "q", model.SearchEpisode, "")
-	if e != nil || p.Complete {
+	if e != nil || !p.Complete {
 		t.Fatal(p, e)
 	}
 }

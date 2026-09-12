@@ -132,6 +132,14 @@ func (c *Client) Search(ctx context.Context, token, q string, kind model.SearchK
 	if len(items) > 200 {
 		return out, discoveryBad()
 	}
+	// Live-checked for PODCAST, EPISODE and USER on 2026-09-12:
+	// search omits both paging fields on terminal pages, including empty
+	// results. Keep this endpoint contract out of the generic decoder.
+	_, hasKey := env["loadMoreKey"]
+	_, hasMore := env["hasMore"]
+	if !hasKey && !hasMore {
+		complete = true
+	}
 	if next != "" {
 		key, e := DecodeCursor(next)
 		if e != nil || !validSearchKey(key) {
