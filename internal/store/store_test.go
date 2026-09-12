@@ -1,6 +1,8 @@
 package store
 
 import (
+	"bytes"
+	"os"
 	"path/filepath"
 	"testing"
 )
@@ -91,8 +93,16 @@ func TestBadDatabaseDoesNotOverwrite(t *testing.T) {
 	if e := writeBadDatabase(p); e != nil {
 		t.Fatal(e)
 	}
+	before, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if s, e := Open(p); e == nil {
 		s.Close()
 		t.Fatal("accepted invalid database")
+	}
+	after, err := os.ReadFile(p)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatal("original corrupt database was modified", err)
 	}
 }
