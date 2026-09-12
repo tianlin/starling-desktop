@@ -36,8 +36,7 @@ try {
     $Installed = Join-Path $Target 'Starling.exe'
     $Menu = Join-Path $MenuDir 'Starling.lnk'
     Assert-Test ((Get-FileHash $Installed).Hash -eq (Get-FileHash $Binary).Hash) 'Installed bytes differ.'
-    $Shell = New-Object -ComObject WScript.Shell
-    Assert-Test ($Shell.CreateShortcut($Menu).TargetPath -eq $Installed) 'Shortcut points outside isolated install.'
+    Assert-Test ([Starling.Installer.ShellLinks]::ReadTarget($Menu) -eq $Installed) 'Shortcut points outside isolated install.'
     $Checks++
     $SimulateRunning = $true
     Expect-Failure { & (Join-Path $Repo 'scripts/install.ps1') -Binary $Binary } 'Exit Starling'

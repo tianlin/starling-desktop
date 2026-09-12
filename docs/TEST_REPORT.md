@@ -55,7 +55,7 @@
 
 ## 安装/卸载脚本隔离回归
 
-`test-installation.ps1` 在 Windows PowerShell 5.1 和 PowerShell 7 下均有 7 项检查通过：相对目录拒绝、中文路径安装及快捷方式目标、模拟正式/候选进程保护、真实文件锁导致升级失败时旧文件保留且暂存清理、正常升级、目录 junction 拒绝前保留原文件、卸载保留数据与显式删除。数据及快捷方式全部位于唯一临时目录，没有执行真实程序、改动用户安装或开始菜单。安装/卸载之前检查完整路径与重解析点；升级采用暂存后 File.Replace。
+`test-installation.ps1` 在 Windows PowerShell 5.1 和 PowerShell 7 下均有 7 项检查通过：相对目录拒绝、中文路径安装及快捷方式目标、模拟正式/候选进程保护、真实文件锁导致升级失败时旧文件保留且暂存清理、正常升级、目录 junction 拒绝前保留原文件、卸载保留数据与显式删除。数据及快捷方式全部位于唯一临时目录，没有执行真实程序、改动用户安装或开始菜单。安装/卸载之前检查完整路径与重解析点；升级采用暂存后 File.Replace。远端 Windows Server 对照暴露 WScript.Shell 对中文目标路径赋值失败（ASCII 测试文件和系统文件均接受）；快捷方式已改用原生 Unicode IShellLinkW / IPersistFile，测试从保存的 .lnk 读回完整目标，保留中文断言。对应接口依据 [Microsoft IShellLinkW 文档](https://learn.microsoft.com/en-us/windows/win32/api/shobjidl_core/nn-shobjidl_core-ishelllinkw)。
 
 这不替代干净 VM、非管理员账号、真实运行中程序与已签名安装包验收。当前二进制内容不因脚本改动而变化。
 

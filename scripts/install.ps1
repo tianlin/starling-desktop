@@ -8,6 +8,7 @@ if (Get-Process -Name 'Starling', 'Starling-candidate*' -ErrorAction SilentlyCon
 $Target = Get-StarlingChildPath $env:LOCALAPPDATA 'Programs\Starling'
 $Menu = Get-StarlingChildPath $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\Starling.lnk'
 Assert-StarlingTree $Target
+if (-not ('Starling.Installer.ShellLinks' -as [type])) { Add-Type -Path (Join-Path $PSScriptRoot 'shell-link.cs') }
 New-Item -ItemType Directory -Force $Target | Out-Null
 $Destination = Join-Path $Target 'Starling.exe'
 $Staged = Join-Path $Target ('Starling-' + [guid]::NewGuid().ToString('N') + '.tmp')
@@ -19,10 +20,5 @@ try {
     if (Test-Path -LiteralPath $Staged) { Remove-Item -LiteralPath $Staged -Force }
 }
 New-Item -ItemType Directory -Force (Split-Path -Parent $Menu) | Out-Null
-$Shell = New-Object -ComObject WScript.Shell
-$Shortcut = $Shell.CreateShortcut($Menu)
-$Shortcut.TargetPath = Join-Path $Target "Starling.exe"
-$Shortcut.WorkingDirectory = $Target
-$Shortcut.Description = "Starling - experimental unofficial desktop podcast client"
-$Shortcut.Save()
+[Starling.Installer.ShellLinks]::Create($Menu, $Destination, $Target)
 Write-Host "Installed for the current user. Account features remain experimental and disabled by default."
