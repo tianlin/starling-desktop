@@ -1,0 +1,86 @@
+name: CodeQL
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '23 3 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+  security-events: write
+jobs:
+  go:
+    name: Go (${{ matrix.platform }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            runner: ubuntu-24.04
+            cgo: '1'
+          - platform: windows
+            runner: windows-2022
+            cgo: '0'
+          - platform: macos
+            runner: macos-15-intel
+            cgo: '1'
+    runs-on: ${{ matrix.runner }}
+    env:
+      CGO_ENABLED: ${{ matrix.cgo }}
+      MACOSX_DEPLOYMENT_TARGET: '14.0'
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: '1.26.8'
+          cache: false
+      - name: Install system SQLite headers
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libsqlite3-dev
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: go
+          build-mode: manual
+      # The nested desktop module has no Linux host. Building the root alone
+      # silently misses it; build it explicitly on both supported desktop OSes.
+      - name: Build core for extraction
+        run: go build -a ./...
+      - name: Build desktop host for extraction
+        if: runner.os != 'Linux'
+        working-directory: desktop
+        run: go build -a -tags production ./...
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:go/platform:${{ matrix.platform }}
+  other-languages:
+    name: Analyze (${{ matrix.language }})
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [actions, javascript-typescript, python, csharp]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}
+  swift:
+    name: Analyze (swift)
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: swift
+          build-mode: manual
+      - name: Build isolated macOS smoke helper for extraction
+        run: swiftc scripts/quit-macos.swift -o "$RUNNER_TEMP/quit-macos"
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:swift

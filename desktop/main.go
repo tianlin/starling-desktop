@@ -1,4 +1,4 @@
-//go:build windows
+//go:build windows || darwin
 
 package main
 
@@ -10,12 +10,12 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
-	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	wruntime "github.com/wailsapp/wails/v2/pkg/runtime"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"starling/internal/app"
 	native "starling/internal/desktop"
 	"starling/internal/model"
@@ -37,6 +37,7 @@ type App struct {
 	integration *native.Integration
 	gate        native.QuitGate
 	dialog      bool
+	ready       bool
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -58,9 +59,11 @@ func (a *App) info() native.Info {
 	n := a.integration
 	a.mu.Unlock()
 	if n == nil {
-		return native.Info{Message: "原生集成正在初始化。"}
+		return native.Info{Platform: runtime.GOOS, Message: "原生集成正在初始化。"}
 	}
-	return n.Info()
+	info := n.Info()
+	info.Platform = runtime.GOOS
+	return info
 }
 func (a *App) requestQuit() {
 	if !a.gate.Request() {
@@ -75,6 +78,7 @@ func (a *App) requestQuit() {
 	go func() {
 		time.Sleep(6 * time.Second)
 		if !a.gate.Allowed() {
+			fmt.Fprintln(os.Stderr, "Starling quit fallback")
 			a.gate.Allow()
 			wruntime.Quit(ctx)
 		}
@@ -85,6 +89,10 @@ func (a *App) beforeClose(ctx context.Context) bool {
 		return false
 	}
 	if a.gate.Requested() {
+		return true
+	}
+	if runtime.GOOS == "darwin" {
+		a.requestQuit()
 		return true
 	}
 	behavior := a.service.Settings().CloseBehavior
@@ -133,6 +141,14 @@ func (a *App) Call(action, payload string) string {
 		return fail("INVALID_REQUEST", "请求过大。")
 	}
 	switch action {
+	case "desktop.ready":
+		a.mu.Lock()
+		if !a.ready {
+			fmt.Fprintln(os.Stderr, "Starling application ready")
+			a.ready = true
+		}
+		a.mu.Unlock()
+		return ok(nil)
 	case "desktop.info":
 		return ok(a.info())
 	case "desktop.quitReady":
@@ -140,6 +156,7 @@ func (a *App) Call(action, payload string) string {
 			return fail("INVALID_STATE", "未请求退出。")
 		}
 		a.gate.Allow()
+		fmt.Fprintln(os.Stderr, "Starling progress flushed")
 		go wruntime.Quit(ctx)
 		return ok(nil)
 	case "desktop.openExternal":
@@ -204,7 +221,9 @@ func main() {
 	dataDir := filepath.Join(base, "Starling")
 	release, e := native.AcquireInstance(dataDir)
 	if e != nil {
-		native.Alert(e.Error())
+		if !alreadyRunning(e) {
+			native.Alert(e.Error())
+		}
 		return
 	}
 	defer release()
@@ -220,20 +239,19 @@ func main() {
 	defer db.Close()
 	service := app.New(provider.New(), db, security.NewVault(filepath.Join(dataDir, "session.vault")))
 	defer service.Close()
-	// Per-run WebView profile limits retained browser data. Best-effort cleanup is retried next launch.
-	webview := filepath.Join(dataDir, "webview-cache")
-	_ = os.RemoveAll(webview)
-	defer os.RemoveAll(webview)
+	webview, cleanup := platformWebview(dataDir)
+	defer cleanup()
 	ui, e := fs.Sub(assets, "assets")
 	if e != nil {
 		native.Alert("前端资源不可用。")
 		return
 	}
 	a := &App{service: service}
-	e = wails.Run(&options.App{
+	opts := &options.App{
 		Title: "Starling · 星听 " + app.Version + "（非官方）", Width: 1240, Height: 840, MinWidth: 900, MinHeight: 650,
 		AssetServer: &assetserver.Options{Assets: ui, Middleware: middleware}, Bind: []interface{}{a},
 		OnStartup: a.startup, OnBeforeClose: a.beforeClose,
+		OnDomReady: func(context.Context) { fmt.Fprintln(os.Stderr, "Starling desktop ready") },
 		OnShutdown: func(ctx context.Context) {
 			a.mu.Lock()
 			n := a.integration
@@ -242,23 +260,10 @@ func main() {
 				n.Close()
 			}
 		},
-		Windows: &windows.Options{Theme: windows.Light, WebviewUserDataPath: webview, DisablePinchZoom: true, DLLSearchPaths: windows.DLLSearchSystem32, OnSuspend: func() {
-			a.mu.Lock()
-			ctx := a.ctx
-			a.mu.Unlock()
-			if ctx != nil {
-				wruntime.EventsEmit(ctx, "desktop:pause")
-			}
-		}, OnResume: func() {
-			a.mu.Lock()
-			ctx := a.ctx
-			a.mu.Unlock()
-			if ctx != nil {
-				wruntime.EventsEmit(ctx, "desktop:pause")
-			}
-		}},
-	})
+	}
+	configurePlatform(opts, a, webview)
+	e = wails.Run(opts)
 	if e != nil {
-		native.Alert(fmt.Sprintf("桌面启动失败。请检查 WebView2 运行时与应用资源。\n%T", e))
+		native.Alert(fmt.Sprintf("%s\n%T", platformStartupError(), e))
 	}
 }

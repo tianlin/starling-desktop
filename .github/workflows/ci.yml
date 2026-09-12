@@ -6,6 +6,36 @@ on:
 permissions:
   contents: read
 jobs:
+  macos-candidate:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version: '1.26.8'
+          cache: false
+      - uses: actions/setup-node@v7.0.0
+        with:
+          node-version: '22.16.0'
+      - name: Test, build, sign and package native macOS candidate
+        run: bash scripts/build-macos.sh "${{ matrix.arch }}"
+      - name: Mount candidate and verify isolated guest startup and quit
+        run: bash scripts/smoke-macos.sh build/macos-${{ matrix.arch }}/Starling-*-macos-${{ matrix.arch }}.dmg
+      - name: Upload macOS candidate and exact build evidence
+        if: always() && hashFiles('build/macos-*/**') != ''
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: starling-macos-${{ matrix.arch }}
+          path: build/macos-${{ matrix.arch }}/
+          if-no-files-found: error
   core:
     runs-on: ubuntu-24.04
     steps:

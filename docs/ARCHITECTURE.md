@@ -6,13 +6,13 @@
 
 根 Go 模块包含业务、平台、会话、安全、存储与原生集成；`desktop/` 是单独依赖 Wails 的 Go 模块。根目录测试不会覆盖宿主，构建脚本分别检查，临时双模块 workspace 负责依赖校验。前端为原生 DOM TypeScript，编译资产嵌入宿主。独立 `cmd/demo` 使用合成 Provider 和临时数据库，生产入口不引用演示。
 
-Windows 使用 System32 的 `winsqlite3.dll`，不要求 CGo；Linux 自动化通过 CGo 调用系统 SQLite。两条原生路径分别验证。Windows 分发采用便携程序与当前用户安装脚本，尚无代码签名和自动更新。
+Windows 使用 System32 的 `winsqlite3.dll`，不要求 CGo；Linux 自动化和 macOS 通过 CGo 调用系统 SQLite。原生路径分别验证。Windows 分发采用便携程序与当前用户安装脚本，尚无代码签名和自动更新。
 
 ## 认证、会话与写操作
 
 账号接入默认关闭，设置继续序列化为 `experimentalAccount`。小宇宙 App 扫码由 provider/session 的 QR 状态机处理，`CONFIRMED` 和 `USED` 均需解析完整凭据，再核对听众资料身份；凭据缺失或身份不符不建立会话。短信适配保留，当前网页人机验证兼容性有限。详见 [QR_LOGIN.md](QR_LOGIN.md)。
 
-认证、退出和重置推进 epoch。网络结果提交、写盘和退出清理在会话锁下校验 epoch，迟到的认证、恢复、刷新和数据请求不能进入新账号。选择保存会话时采用用户级 DPAPI 和原子凭据写入，失败不降级明文。
+认证、退出和重置推进 epoch。网络结果提交、写盘和退出清理在会话锁下校验 epoch，迟到的认证、恢复、刷新和数据请求不能进入新账号。选择保存会话时，Windows 采用用户级 DPAPI 和原子凭据写入，macOS 使用本机钥匙串；失败不降级明文。
 
 读请求遇到 401 合并到单次刷新，轮换凭据先保存再更新内存，每个原请求最多重放一次。网络故障保留身份，永久认证失败要求重新连接。评论和订阅走独立的单次写路径：不自动刷新重放写请求，使用当前会话的请求 ID 防重复，并检查并发操作准入；未知结果交由刷新/读回与用户确认处理，无离线发送队列。
 
@@ -39,3 +39,7 @@ Win32 辅助窗口接收托盘、热键和电源消息，能力失败反馈到�
 ## 内容和存储安全
 
 Wails 资源带 CSP；说明经惰性模板解析后重构允许的文本节点，不复制原属性或执行原 HTML。API、媒体、图片及外部链接各自校验 URL；外链经宿主验证才交给默认浏览器。SQLite 使用绑定参数。WebView 使用独立临时运行目录，退出及下次启动尽力清理；不承诺即时或取证级擦除。完整边界见 [SECURITY.md](../SECURITY.md) 和 [PRIVACY.md](../PRIVACY.md)。
+
+## macOS 平台层
+
+公共宿主保留唯一 Call 桥，平台文件分别配置 Windows WebView2 与 macOS WKWebView。macOS 关闭按钮隐藏应用，退出事件走公共 QuitGate 保存握手；Cocoa 菜单栏与睡眠观察者在主线程注册和释放。数据库使用 Linux/macOS 共用 CGo SQLite 实现。Vault 工厂返回接口：Windows 为 DPAPI FileVault，macOS 为系统钥匙串项；通用测试验证保存轮换、故障和隔离。desktop.info 的 platform 字段用于平台文案，SessionView 的 storageWarning 字段用于显式报告临时会话降级。

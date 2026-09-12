@@ -27,7 +27,6 @@ type FileVault struct {
 	protector Protector
 }
 
-func NewVault(path string) *FileVault              { return newVault(path, nativeProtector{}) }
 func newVault(path string, p Protector) *FileVault { return &FileVault{path: path, protector: p} }
 func (v *FileVault) Available() bool               { return v.protector.Available() }
 func (v *FileVault) Save(s model.SavedSession) error {
@@ -71,7 +70,7 @@ func (v *FileVault) Load() (model.SavedSession, error) {
 	} // A logout tombstone is deliberately credential-free.
 	raw, e := v.protector.Unprotect(b)
 	if e != nil {
-		return s, model.Err("SECURE_STORAGE", "凭据无法在当前 Windows 用户下解密，请重新登录。")
+		return s, model.Err("SECURE_STORAGE", "凭据无法在当前系统用户下解密，请重新登录。")
 	}
 	defer clear(raw)
 	if json.Unmarshal(raw, &s) != nil {

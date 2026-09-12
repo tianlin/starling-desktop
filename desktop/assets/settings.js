@@ -101,7 +101,7 @@ export function showAccount(app) {
     rememberBox.type = 'checkbox';
     rememberBox.checked = app.boot.session.storageAvailable;
     rememberBox.disabled = !app.boot.session.storageAvailable;
-    remember.append(rememberBox, el('span', '', app.boot.session.storageAvailable ? '使用 Windows 系统保护保存会话' : '系统保护不可用，仅本次会话'));
+    remember.append(rememberBox, el('span', '', app.boot.session.storageAvailable ? (app.desktop.platform === 'darwin' ? '使用 macOS 钥匙串保存会话' : '使用系统保护保存会话') : '系统保护不可用，仅本次会话'));
     let timer;
     let busy = false;
     let disposed = false;
@@ -255,17 +255,24 @@ export function showSettings(app) {
     });
     section('账号接入', '默认关闭。启用前阅读账号风控与非官方接口风险。连接后可查看评论；点击“发表评论”会以当前账号发送公开评论。', enabled);
     section('恢复已保存会话', '只读取本应用自身的受保护凭据，不读取其他应用或浏览器的登录状态。', button('尝试恢复', () => { void call('account.restore').then(() => app.reload()).then(() => app.navigate('settings')).catch(e => app.notice(e)); }));
-    const close = el('select');
-    close.setAttribute('aria-label', '关闭窗口行为');
-    for (const [value, label] of [['ask', '每次询问'], ['tray', '最小化到托盘'], ['exit', '退出程序']]) {
-        const option = el('option', '', label);
-        option.value = value;
-        close.append(option);
+    if (app.boot.session.storageWarning)
+        section('会话保存失败', app.boot.session.storageWarning);
+    if (app.desktop.platform === 'darwin') {
+        section('关闭主窗口', '关闭按钮隐藏窗口并继续播放；从 Dock 或菜单栏恢复。⌘Q 或菜单中的退出会保存进度并停止播放。');
     }
-    close.value = app.boot.settings.closeBehavior;
-    close.addEventListener('change', () => { app.boot.settings.closeBehavior = close.value; void app.saveSettings().catch(e => app.notice(e)); });
-    section('关闭主窗口', app.desktop.tray ? '托盘可显示窗口、播放 / 暂停或退出。' : '当前宿主尚未报告托盘能力；无法隐藏时会明确提示。', close);
-    section('媒体键', app.desktop.mediaKey ? '原生媒体键已注册；实际键盘与系统冲突仍需实机验证。' : '使用宿主 Media Session 能力；本环境未验证 Windows 媒体键。');
+    else {
+        const close = el('select');
+        close.setAttribute('aria-label', '关闭窗口行为');
+        for (const [value, label] of [['ask', '每次询问'], ['tray', '最小化到托盘'], ['exit', '退出程序']]) {
+            const option = el('option', '', label);
+            option.value = value;
+            close.append(option);
+        }
+        close.value = app.boot.settings.closeBehavior;
+        close.addEventListener('change', () => { app.boot.settings.closeBehavior = close.value; void app.saveSettings().catch(e => app.notice(e)); });
+        section('关闭主窗口', app.desktop.tray ? '托盘可显示窗口、播放 / 暂停或退出。' : '当前宿主尚未报告托盘能力；无法隐藏时会明确提示。', close);
+    }
+    section('媒体键', app.desktop.mediaKey ? '原生媒体键已注册；实际键盘与系统冲突仍需实机验证。' : '可使用应用内播放控制；当前环境未提供经验证的全局媒体键。');
     section('清除列表缓存', '不会退出账号，也不会删除书签、队列或收听进度。', button('清除缓存', () => { void app.clearCache().then(() => app.notice('列表缓存已清除。')).catch(e => app.notice(e)); }));
     section('本地诊断', '仅保存本次进程最近 100 条业务错误码，不包含账号、令牌或收听内容。', button('查看诊断', () => { void call('diagnostics').then(data => { const body = openModal(app, '诊断预览'); body.append(el('pre', 'diagnostics', JSON.stringify(data, null, 2)), button('保存到文件', () => { void call('desktop.exportDiagnostics').then(() => app.notice('诊断保存操作已结束。')).catch(e => app.notice(e)); })); }).catch(e => app.notice(e)); }));
     section('重置全部本地数据', '清除本应用凭据、账号与访客书签、队列、进度和设置。无法撤销；不承诺取证级安全擦除。', button('重置数据', () => {

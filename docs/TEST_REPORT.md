@@ -1,4 +1,4 @@
-# Starling 0.2.0 测试与证据
+# Starling 测试与证据
 
 更新：2026-09-12。本文件集中维护核验入口与最新结果，原生长时播放、干净机及多账号等后续事项见 [REMAINING_WORK.md](REMAINING_WORK.md)。自动化通过、真实接口可读、原生交互可用和签名发布是不同证据，不相互替代。
 
@@ -91,3 +91,32 @@ node scripts/dependency-report.mjs build/Starling-candidate-020.exe
 例如明确启用后运行 `go test ./internal/provider -run '^TestLiveLibraryReadOnly$' -v -count=1`，结束后删除本次设置的变量。评论样本可通过 `STARLING_LIVE_COMMENT_EPISODE` 指定；通用评论探针还检查 TIME 时间顺序，已知服务器样本可能使该断言失败，需如实记录而非宣称全通过。
 
 每条新增证据记录：场景、环境版本、命令或操作、预期、实际、脱敏输出位置、执行日期、提交及候选哈希。失败保留原因与复现入口，缺少条件的项目保留待验证。
+
+## 0.3.0 macOS 候选实现
+
+本次新增 macOS 平台层、隔离钥匙串原生测试、双架构 CI、DMG 检查和访客启动/退出冒烟。执行环境与最终结果在本节更新；已有 0.2.0 结果仅属于历史构建，不能作为 0.3.0 验收。Mac 实机逐项表见 [MACOS.md](MACOS.md)。
+
+### 0.3.0 本地结果（2026-09-13）
+
+- Windows 根模块 test/vet、桌面模块 test/vet 通过；前端 107 项通过。
+- 六组 Chromium 合成浏览器回归共 57 项通过（run 16、comments 16、updates 7、discovery 8、media 6、media_failures 4）。更新流用例中一条已被 0.2.0 后续提交移除的技术提示断言已同步；未知结束和确认空列表仍分别验证。
+- Windows 候选 Starling-candidate-030.exe 构建及 0.3.0 版本资源检查通过，未替换或启动用户运行中的应用；SHA-256 位于 build/SHA256SUMS-candidate-030.txt。实际 EXE 扫描无漏洞命中，依赖材料 20 个组件、63 份许可文本。
+- Windows 安装/卸载隔离回归 7 项、许可收集器 2 项、actionlint 1.7.12 均通过。
+- WSL Ubuntu 24.04 根模块 `go test -race ./...` / `go vet ./...` 通过；macOS shell 脚本语法和产物校验 Python 脚本编译检查通过。
+- macOS 原生验证通过下述 CI 完成；最低系统版本、实际出声与用户账号流程待实机验收。
+
+### 0.3.0 双架构 CI 结果
+
+实现提交：`356b5a601af1f0b95426871c85fbde093b24a175`。2026-09-13 核对 [CI run 34717600249](https://github.com/tianlin/starling-desktop/actions/runs/34717600249) 已完成且结论为 success，五个作业全部通过。后续文档补充不改变此实现提交的源码。
+
+| 作业 | 已通过范围 |
+| --- | --- |
+| macOS 15 arm64 | 根模块 race/vet、宿主 test/vet、隔离钥匙串测试、前端测试、Wails 应用构建、ad-hoc 签名完整性、架构/最低目标/动态库检查、漏洞扫描、依赖材料、DMG 打包与挂载、隔离访客前端初始化和实际退出保存握手 |
+| macOS 15 Intel amd64 | 与 arm64 相同范围，在 Intel runner 原生执行 |
+| Windows candidate | 测试、构建、版本资源、实际 EXE 漏洞扫描和依赖材料 |
+| Windows installation | 隔离安装/卸载检查 |
+| Linux core | 核心 race/vet、前端与合成浏览器回归 |
+
+候选下载（GitHub Actions artifact，可能需要登录 GitHub）：[Apple Silicon](https://github.com/tianlin/starling-desktop/actions/runs/34717600249/artifacts/10305171941)、[Intel](https://github.com/tianlin/starling-desktop/actions/runs/34717600249/artifacts/10304933187)。每个压缩包内包含对应 DMG、SHA256SUMS.txt、构建环境、校验/启动日志和依赖材料。制品有保留期限，并非永久 Release 附件。
+
+上述启动冒烟不播放真实节目，不登录真实账号；拒绝把六秒超时退出视为正常保存握手。macOS 14 实机、Gatekeeper 首次下载提示、实际音频、Dock/菜单栏交互、系统睡眠和长时播放仍需用户按 MACOS.md 验收。

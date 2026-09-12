@@ -47,6 +47,7 @@ type SessionView struct {
 	Identity         *Identity `json:"identity,omitempty"`
 	Persistent       bool      `json:"persistent"`
 	StorageAvailable bool      `json:"storageAvailable"`
+	StorageWarning   string    `json:"storageWarning,omitempty"`
 }
 
 type Item struct {

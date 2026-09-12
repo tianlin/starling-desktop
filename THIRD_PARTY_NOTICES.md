@@ -6,10 +6,11 @@
 
 | 项目 | 使用方式 | 状态 |
 |---|---|---|
-| Wails 2.11.0 | Windows 宿主依赖 | 由 desktop/go.mod 与 go.sum 固定；依赖许可由构建报告收集 |
+| Wails 2.11.0 | Windows/macOS 宿主依赖 | 由 desktop/go.mod 与 go.sum 固定；依赖许可由构建报告收集 |
 | TypeScript 5.8.3 | 构建时编译器 | 由 package-lock 固定；node_modules 不随源码包分发 |
-| SQLite | Linux 测试链接系统 libsqlite3；Windows 调用系统 winsqlite3.dll | 不分发 SQLite amalgamation 或 Windows DLL；薄绑定为本项目编写 |
+| SQLite | Linux 测试与 macOS 链接系统 libsqlite3；Windows 调用系统 winsqlite3.dll | 不分发 SQLite amalgamation 或 Windows DLL；薄绑定为本项目编写 |
 | Go / Node / Windows WebView2 | 工具链或宿主运行时 | 不随源码包分发 |
+| macOS Cocoa / Security / WebKit | 窗口、菜单栏、钥匙串及 WKWebView 系统框架 | 由 macOS 提供，不复制系统框架；薄绑定为本项目编写 |
 | Chromium / Python Playwright | 浏览器测试环境 | 不作为客户端运行时分发 |
 
 构建后运行 `node scripts/dependency-report.mjs build/Starling.exe`，从实际二进制读取运行时 Go 模块，另列 Go 运行时/工具链与 TypeScript 构建工具。脚本会核对本地 Go 版本及模块图与二进制记录一致。组件数量以本次 `build/compliance/sbom.cdx.json` 的 `components.length` 为准；许可文件数量为 `license-inventory.json` 中各 `modules[].licenseFiles.length` 之和，命令也会输出这两个计数。
@@ -47,3 +48,5 @@ Go 工具链锁定 1.26.8；x/net 0.56.0、x/text 0.39.0、x/sys 0.46.0、x/cryp
 - https://learn.microsoft.com/en-us/windows/win32/api/shellapi/ns-shellapi-notifyicondataw — 托盘结构体。
 - https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-registerhotkey — 原生媒体热键注册。
 - https://go.dev/dl/?mode=json — 2026-09-12 核对 Go 1.26.8 为受维护分支补丁版本，项目与 CI 固定此版本。
+
+macOS 构建脚本直接从对应架构的实际 Mach-O 可执行文件生成报告，输出到 `build/macos-arm64/compliance/` 或 `build/macos-amd64/compliance/`，与 Windows 报告分开。系统框架和编解码器不在 Go 模块清单内，仍适用各自的系统许可条款。

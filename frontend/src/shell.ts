@@ -96,6 +96,7 @@ export class Application {
             this.drawAccount();
             this.nativeEvents();
             await this.navigate('home');
+            if (!window.__STARLING_DEMO__) await call('desktop.ready');
             if (this.boot.warning)
                 this.notice(this.boot.warning.message);
         }
@@ -147,7 +148,7 @@ export class Application {
     private nativeEvents() {
         window.runtime?.EventsOn('desktop:toggle', () => { void this.player.toggle(); });
         window.runtime?.EventsOn('desktop:pause', () => this.player.pause());
-        window.runtime?.EventsOn('desktop:before-quit', () => { this.player.pause(); void this.player.persist().finally(() => call('desktop.quitReady').catch(() => { })); });
+        window.runtime?.EventsOn('desktop:before-quit', () => { this.player.pause(); void this.player.persist().then(() => call('desktop.quitReady')).catch(e => this.notice(e)); });
         if ('mediaSession' in navigator) {
             const set = (name: MediaSessionAction, fn: MediaSessionActionHandler) => { try {
                 navigator.mediaSession.setActionHandler(name, fn);
@@ -190,7 +191,9 @@ export class Application {
         const boot = await call<Bootstrap>('bootstrap');
         if (generation !== this.reloadGeneration || boot.session.epoch < (this.boot?.session.epoch ?? 0)) return;
         if (this.boot && (this.boot.session.epoch !== boot.session.epoch || this.boot.session.identity?.id !== boot.session.identity?.id)) { this.updatesReturn = false; this.discoveryReturn = false; this.confirmedSubscriptions?.clear(); }
+        const storageChanged = boot.session.storageWarning && boot.session.storageWarning !== this.boot?.session.storageWarning;
         this.boot = boot;
+        if (storageChanged) this.notice(boot.session.storageWarning!);
         this.discovery?.setSession(boot.session, boot.discoveryGeneration ?? 0);
         this.subscriptions?.setSession(boot.session);
         if (this.discovery && this.route === 'discovery') this.drawDiscovery();
