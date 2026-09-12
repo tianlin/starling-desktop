@@ -98,7 +98,7 @@ func New(dir, host string) (*Server, error) {
 		}
 		return model.Item{}, model.Err("NOT_FOUND", "演示仅包含合成内容，请从当前列表选择。")
 	}
-	a := app.New(f, db, &testkit.MemoryVault{})
+	a := app.New(newDiscoveryDemo(f), db, &testkit.MemoryVault{})
 	epoch := a.Session().Epoch
 	for i := 0; i < 3; i++ {
 		_ = a.SaveProgress(epoch, model.Progress{Item: sample(i), Position: float64(12 + i*17), Duration: 120})

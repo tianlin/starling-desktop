@@ -30,11 +30,21 @@ func cachedView(v model.LibraryView) model.LibraryView {
 }
 
 // Library stages partial pages in memory. Only a proven end replaces the complete SQLite snapshot.
-func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode string) (model.LibraryView, error) {
+func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode string) (out model.LibraryView, resultErr error) {
+	// Confirmed receipts augment views, never replace the complete library cache.
+	defer func() {
+		if kind != "subscriptions" || resultErr != nil {
+			return
+		}
+		resultErr = s.session.Commit(epoch, func(scope string) error {
+			s.mu.Lock()
+			defer s.mu.Unlock()
+			return s.overlaySubscriptionsLocked(scope, epoch, &out)
+		})
+	}()
 	if kind == "updates" {
 		return s.updates(ctx, epoch, mode)
 	}
-	var out model.LibraryView
 	if kind != "favorites" && kind != "subscriptions" && kind != "episodes" {
 		return out, model.Err("UNSUPPORTED", "不支持的列表类型。")
 	}
@@ -70,6 +80,11 @@ func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode str
 			cached := model.LibraryView{Items: []model.Item{}, Status: "idle", Epoch: epoch}
 			ok, e := s.store.Get(scope, "cache", key, &cached)
 			if e != nil {
+				if kind == "subscriptions" {
+					out = cached
+					subscriptionCacheWarning(&out)
+					return nil
+				}
 				return e
 			}
 			cached.Epoch = epoch
@@ -163,6 +178,11 @@ func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode str
 			if len(stage.view.Items) == 0 {
 				var cached model.LibraryView
 				if ok, er := s.store.Get(scope, "cache", key, &cached); er != nil {
+					if kind == "subscriptions" {
+						out = cloneView(stage.view)
+						subscriptionCacheWarning(&out)
+						return nil
+					}
 					return er
 				} else if ok {
 					stage.view.Items = cached.Items
@@ -201,6 +221,16 @@ func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode str
 			if e := s.store.Put(scope, "cache", key, stage.view); e != nil {
 				stage.view.Status = "error"
 				stage.view.Error = model.PublicError(e)
+			} else if kind == "subscriptions" {
+				// Retire receipts only after a persisted complete authoritative refresh.
+				for _, it := range stage.view.Items {
+					if e := s.store.Delete(scope, "subscription-confirmed", it.ID); e != nil {
+						break
+					}
+					if s.subscriptionEpoch == epoch {
+						delete(s.subscriptionConfirmed, it.ID)
+					}
+				}
 			}
 		} else if page.Cursor != "" {
 			stage.view.Status = "partial"

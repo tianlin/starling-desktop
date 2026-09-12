@@ -1,0 +1,176 @@
+"""Exploration browser acceptance: synthetic account, fixture audio, no live writes."""
+import json, os, pathlib, shutil, socket, subprocess, time, urllib.request
+from playwright.sync_api import sync_playwright, expect
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+OUT = ROOT / 'docs' / 'test-results'
+OUT.mkdir(exist_ok=True)
+EXE = ROOT / 'build' / ('demo-discovery.exe' if os.name == 'nt' else 'demo-discovery')
+EXE.parent.mkdir(exist_ok=True)
+ADDRESS = '127.0.0.1:34121'
+with socket.socket() as probe: probe.bind(('127.0.0.1', 34121))
+subprocess.run([shutil.which('npm.cmd' if os.name == 'nt' else 'npm'), 'run', 'build'], cwd=ROOT/'frontend', check=True)
+subprocess.run(['go', 'build', '-o', str(EXE), './cmd/demo'], cwd=ROOT, check=True)
+process = subprocess.Popen([str(EXE), '-listen', ADDRESS], cwd=ROOT, stdout=subprocess.DEVNULL, stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0)
+results = []
+try:
+    for _ in range(100):
+        try: urllib.request.urlopen('http://' + ADDRESS, timeout=.2).close(); break
+        except Exception: time.sleep(.1)
+    else: raise RuntimeError('Synthetic discovery server did not start')
+    with sync_playwright() as pw:
+        chrome = os.environ.get('CHROMIUM_PATH')
+        candidate = pathlib.Path('C:/Program Files/Google/Chrome/Application/chrome.exe')
+        if not chrome and candidate.exists(): chrome = str(candidate)
+        browser = pw.chromium.launch(executable_path=chrome, headless=True, args=['--mute-audio'])
+        page = browser.new_page(viewport={'width':1280,'height':900}, timezone_id='Asia/Shanghai')
+        page.set_default_timeout(12000)
+        errors, requests = [], []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        page.on('request', lambda r: requests.append(r.post_data_json) if r.url.endswith('/api') and r.method=='POST' else None)
+        page.goto('http://' + ADDRESS)
+        page.locator('[data-route="discovery"]').click()
+        expect(page.get_by_role('heading',name='探索新播客')).to_be_visible()
+        assert not any(r['action']=='discovery.search' for r in requests)
+        field=page.locator('#discovery-query')
+        field.fill('科学')
+        field.dispatch_event('compositionstart')
+        field.press('Enter')
+        expect(page.locator('#modal')).not_to_be_visible()
+        field.dispatch_event('compositionend')
+        field.press('Enter')
+        expect(page.locator('#modal')).to_be_visible()
+        page.locator('#modal .check-row input').first.check()
+        page.get_by_label('手机号',exact=True).fill('00000000000')
+        page.get_by_label('短信验证码',exact=True).fill('0000')
+        page.get_by_role('button',name='验证并连接',exact=True).click()
+        expect(page.locator('#account-name')).to_have_text('合成测试账号')
+        expect(page.locator('#discovery-query')).to_have_value('科学')
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        results.append('PASS: guest query survives login; composition Enter does not submit')
+        expect(page.locator('.discovery-history')).to_contain_text('科学')
+        page.screenshot(path=str(OUT/'discovery-desktop.png'))
+        page.locator('#discovery-tab-user').click()
+        expect(page.locator('.creator-card')).to_have_count(1)
+        page.locator('.creator-card').get_by_role('button',name='合成科学主播',exact=True).click()
+        expect(page.locator('#page .episode-card')).to_have_count(9)
+        first=page.locator('#page .episode-card').first
+        pid=first.get_attribute('data-id')
+        title=first.locator('.episode-title').inner_text()
+        first.get_by_role('button',name='＋ 订阅',exact=True).click()
+        expect(page.locator(f'[data-subscription="{pid}"] button').first).to_have_text('已订阅')
+        assert sum(r['action']=='subscription.add' for r in requests)==1
+        page.screenshot(path=str(OUT/'discovery-creator.png'))
+        page.get_by_role('button',name=title,exact=True).click()
+        expect(page.locator('#page h1')).to_have_text(title)
+        expect(page.locator(f'[data-subscription="{pid}"] button').first).to_have_text('已订阅')
+        page.get_by_role('button',name='← 返回创作者',exact=True).click()
+        expect(page.locator('#page .episode-card')).to_have_count(9)
+        page.get_by_role('button',name='← 返回探索结果',exact=True).click()
+        expect(page.locator('.creator-card')).to_have_count(1)
+        page.locator('[data-route="subscriptions"]').click()
+        expect(page.locator(f'#page .episode-card[data-id="{pid}"]')).to_be_visible()
+        results.append('PASS: creator owned shows -> subscribe -> detail shared state -> my subscriptions')
+
+        page.locator('[data-route="discovery"]').click()
+        page.locator('#discovery-tab-episode').click()
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        episode=page.locator('#page .episode-card').first
+        episode_title=episode.locator('.episode-title').inner_text()
+        episode.get_by_role('button',name='▶ 播放',exact=True).click()
+        page.wait_for_function("() => document.querySelector('#audio').currentTime > 0.1 && !document.querySelector('#audio').paused")
+        page.locator('#audio').evaluate('(a)=>window.__discoveryAudio=a')
+        episode.get_by_role('button',name='＋ 稍后听',exact=True).click()
+        episode.locator('.episode-title').click()
+        expect(page.locator('#page h1')).to_have_text(episode_title)
+        page.get_by_role('button',name='← 返回探索结果',exact=True).click()
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        assert page.locator('#audio').evaluate('(a)=>a===window.__discoveryAudio && !a.paused')
+        results.append('PASS: episode playback, queue, detail and return preserve one playing audio instance')
+
+        failed=[False]
+        def fail_more(route):
+            req=route.request.post_data_json
+            if req['action']=='discovery.search' and req['payload'].get('cursor') and not failed[0]:
+                failed[0]=True
+                route.fulfill(status=200,content_type='application/json',body=json.dumps({'ok':False,'error':{'code':'NETWORK','message':'合成翻页失败'}}))
+            else: route.continue_()
+        page.route('**/api',fail_more)
+        page.get_by_role('button',name='加载更多结果',exact=True).click()
+        expect(page.locator('#page')).to_contain_text('合成翻页失败')
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        page.get_by_role('button',name='加载更多结果',exact=True).click()
+        expect(page.locator('#page .episode-card')).to_have_count(6)
+        page.unroute('**/api',fail_more)
+        page.get_by_role('button',name='加载更多结果',exact=True).click()
+        expect(page.locator('#page .episode-card')).to_have_count(8)
+        expect(page.get_by_role('button',name='加载更多结果',exact=True)).not_to_be_visible()
+        results.append('PASS: pagination failure retains items and retry reaches deduplicated terminal page')
+
+        page.locator('#discovery-tab-podcast').click()
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        second=page.locator('#page .episode-card').nth(1)
+        pid2=second.get_attribute('data-id')
+        uncertain=[False]
+        def fail_subscribe(route):
+            req=route.request.post_data_json
+            if req['action']=='subscription.add' and not uncertain[0]:
+                uncertain[0]=True
+                route.fulfill(status=200,content_type='application/json',body=json.dumps({'ok':False,'error':{'code':'SUBSCRIPTION_UNCERTAIN','message':'合成订阅结果待确认'}}))
+            else: route.continue_()
+        page.route('**/api',fail_subscribe)
+        count_before=sum(r['action']=='subscription.add' for r in requests)
+        second.get_by_role('button',name='＋ 订阅',exact=True).click()
+        controls=page.locator(f'[data-subscription="{pid2}"]')
+        expect(controls.get_by_role('button',name='结果待确认',exact=True)).to_be_disabled()
+        controls.get_by_role('button',name='核对状态',exact=True).click()
+        expect(controls.get_by_role('button',name='已核对，允许重新订阅',exact=True)).to_be_visible()
+        assert sum(r['action']=='subscription.add' for r in requests)==count_before+1
+        controls.get_by_role('button',name='已核对，允许重新订阅',exact=True).click()
+        controls.get_by_role('button',name='重新尝试订阅',exact=True).click()
+        expect(controls.get_by_role('button',name='已订阅',exact=True)).to_be_disabled()
+        page.unroute('**/api',fail_subscribe)
+        results.append('PASS: uncertain subscription never auto-replays; explicit checked retry confirms state')
+
+        page.locator('#discovery-query').fill('绝无匹配结果xyz')
+        page.locator('#discovery-query').press('Enter')
+        expect(page.get_by_role('heading',name='没有找到相关内容')).to_be_visible()
+        page.locator('#discovery-query').fill('合成普通听友')
+        page.locator('#discovery-query').press('Enter')
+        page.locator('#discovery-tab-user').click()
+        page.locator('.creator-card').get_by_role('button',name='合成普通听友',exact=True).click()
+        expect(page.get_by_role('heading',name='暂无创作节目')).to_be_visible()
+        page.get_by_role('button',name='← 返回探索结果',exact=True).click()
+        page.get_by_label('删除搜索历史 绝无匹配结果xyz',exact=True).click()
+        expect(page.locator('.discovery-history')).not_to_contain_text('绝无匹配结果xyz')
+        page.get_by_role('button',name='清空历史',exact=True).click()
+        expect(page.locator('.discovery-history .history-chip')).to_have_count(0)
+        results.append('PASS: empty search, ordinary user without shows, single history removal and clearing')
+
+        page.locator('#discovery-query').fill('科学')
+        page.locator('#discovery-query').press('Enter')
+        page.locator('#discovery-tab-podcast').click()
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        page.set_viewport_size({'width':760,'height':850})
+        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        page.screenshot(path=str(OUT/'discovery-compact.png'))
+        page.locator('#discovery-tab-podcast').focus()
+        page.locator('#discovery-tab-podcast').press('ArrowRight')
+        expect(page.locator('#discovery-tab-episode')).to_be_focused()
+        expect(page.locator('#discovery-tab-episode')).to_have_attribute('aria-selected','true')
+        assert page.locator('#audio').evaluate('(a)=>a===window.__discoveryAudio && !a.paused')
+        page.reload()
+        page.locator('[data-route="discovery"]').click()
+        page.locator('#discovery-query').fill('科学')
+        page.locator('#discovery-query').press('Enter')
+        expect(page.locator('#page .episode-card')).to_have_count(3)
+        results.append('PASS: compact layout, keyboard tabs, continuous audio and generation seeding after reload')
+        assert not errors, errors
+        results.append('PASS: no browser page errors')
+        browser.close()
+finally:
+    process.terminate()
+    try: process.wait(timeout=5)
+    except subprocess.TimeoutExpired: process.kill();process.wait()
+    (OUT/'discovery.json').write_text(json.dumps(results,ensure_ascii=False,indent=2),encoding='utf-8')
+print('\n'.join(results))

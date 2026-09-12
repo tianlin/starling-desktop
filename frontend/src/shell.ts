@@ -8,8 +8,10 @@ import { CommentsController, renderComments } from './comments.js';
 import { showAccount, showLink, showSettings } from './settings.js';
 import { renderItemCard } from './item-card.js';
 import { UpdatesController, renderUpdates } from './updates.js';
-const titles: Record<string, string> = { home: '继续收听', updates: '订阅更新', subscriptions: '我的订阅', favorites: '收藏单集', bookmarks: '本地书签', queue: '稍后听', settings: '设置' };
-const navIcons: Record<string, string> = { home: '◷', updates: '◉', subscriptions: '▤', favorites: '♡', bookmarks: '▱', queue: '☷', settings: '⚙' };
+import { DiscoveryController, renderDiscovery } from './discovery.js';
+import { SubscriptionController } from './subscriptions.js';
+const titles: Record<string, string> = { home: '继续收听', discovery: '探索', updates: '订阅更新', subscriptions: '我的订阅', favorites: '收藏单集', bookmarks: '本地书签', queue: '稍后听', settings: '设置' };
+const navIcons: Record<string, string> = { home: '◷', discovery: '⌕', updates: '◉', subscriptions: '▤', favorites: '♡', bookmarks: '▱', queue: '☷', settings: '⚙' };
 export class Application {
     boot!: Bootstrap;
     desktop: DesktopInfo = { tray: false, mediaKey: false, demo: false };
@@ -31,11 +33,37 @@ export class Application {
     private lastMediaID = '';
     private libraryGeneration = 0;
     private updates = new UpdatesController(call);
+    private discovery = new DiscoveryController(call);
+    private subscriptions = new SubscriptionController(call);
+    private discoveryReturn = false;
+    private discoveryViewMode: boolean | undefined;
+    private confirmedSubscriptions = new Map<string, Item>();
     private updatesReturn = false;
     private comments = new CommentsController(call);
     private commentScroll: (() => void) | undefined;
     private listCancellation: Promise<void> = Promise.resolve();
     constructor() {
+        this.discovery.onChange = () => this.drawDiscovery();
+        this.discovery.onLogin = () => showAccount(this);
+        this.discovery.onUnauthorized = () => { void this.reload(); };
+        this.discovery.onSubscriptions = states => this.subscriptions.seed(states);
+        this.discovery.onLink = async (text, current) => {
+            const epoch = this.boot.session.epoch;
+            try { const it = await call<Item>('openLink', {epoch, text}); if (current() && epoch === this.boot.session.epoch && this.route === 'discovery') this.showDetail(it); }
+            catch (e) { if (current() && epoch === this.boot.session.epoch && this.route === 'discovery') this.notice(e); }
+        };
+        this.subscriptions.onChange = () => this.drawSubscriptionControls();
+        this.subscriptions.onUnauthorized = () => { void this.reload().catch(e => this.notice(e)); };
+        this.subscriptions.onNotice = message => this.notice(message);
+        this.subscriptions.onConfirmed = result => {
+            if (result.item) this.confirmedSubscriptions.set(result.podcastId, result.item);
+            this.updates.invalidate();
+            if (this.listKind === 'subscriptions') this.stopList();
+            if (this.route === 'subscriptions') {
+                this.mergeConfirmedSubscriptions(); this.drawLibrary();
+                void this.loadLibrary('refresh');
+            } else if (this.route === 'updates') { this.drawUpdates(); void this.updates.enter(); }
+        };
         this.updates.onChange = () => this.drawUpdates();
         this.updates.onUnauthorized = () => { void this.reload(); };
         this.player = new Player(document.querySelector<HTMLAudioElement>('#audio')!, call, () => this.boot?.session.epoch ?? 0, () => this.drawPlayer());
@@ -162,8 +190,12 @@ export class Application {
         const generation = ++this.reloadGeneration;
         const boot = await call<Bootstrap>('bootstrap');
         if (generation !== this.reloadGeneration || boot.session.epoch < (this.boot?.session.epoch ?? 0)) return;
-        if (this.boot && (this.boot.session.epoch !== boot.session.epoch || this.boot.session.identity?.id !== boot.session.identity?.id)) this.updatesReturn = false;
+        if (this.boot && (this.boot.session.epoch !== boot.session.epoch || this.boot.session.identity?.id !== boot.session.identity?.id)) { this.updatesReturn = false; this.discoveryReturn = false; this.confirmedSubscriptions?.clear(); }
         this.boot = boot;
+        this.discovery?.setSession(boot.session, boot.discoveryGeneration ?? 0);
+        this.subscriptions?.setSession(boot.session);
+        if (this.discovery && this.route === 'discovery') this.drawDiscovery();
+        if (this.page) this.drawSubscriptionControls();
         this.updates?.setSession(boot.session);
         if (this.updates && this.route === 'updates') this.drawUpdates();
         this.comments?.setSession(boot.session);
@@ -222,6 +254,12 @@ export class Application {
     async navigate(name: string, returning = false) {
         if (!this.boot)
             return;
+        const pendingDiscovery = this.discovery.takePending();
+        if (pendingDiscovery) name = 'discovery';
+        this.rememberDiscoveryScroll();
+        this.discovery.leave();
+        this.discoveryReturn = false;
+        this.discoveryViewMode = undefined;
         this.stopList();
         this.leaveComments();
         if (this.route === 'updates') this.updates.state.scrollTop = document.querySelector<HTMLElement>('.main')!.scrollTop;
@@ -235,6 +273,14 @@ export class Application {
         this.filter = '';
         this.displayPage = 0;
         document.querySelectorAll<HTMLElement>('[data-route]').forEach(b => { b.classList.toggle('active', b.dataset.route === name); b.setAttribute('aria-current', b.dataset.route === name ? 'page' : 'false'); });
+        if (name === 'discovery') {
+            this.drawDiscovery();
+            document.querySelector<HTMLElement>('.main')!.scrollTop = this.discovery.state.showCreator ? this.discovery.state.creatorScroll : this.discovery.state.scrollTop;
+            const entry = this.discovery.enter();
+            if (pendingDiscovery && this.route === 'discovery') await this.discovery.submit(pendingDiscovery);
+            await entry;
+            return;
+        }
         if (name === 'updates') {
             this.updates.setSession(this.boot.session);
             if (this.boot.session.state !== 'connected') { this.page.replaceChildren(this.heading('订阅更新', '订阅节目的最新单集'), empty('连接账号后查看', '连接小宇宙账号后获取订阅更新。', button('连接小宇宙账号', () => showAccount(this), 'button primary'))); return; }
@@ -319,12 +365,67 @@ export class Application {
             this.page.append(el('p', 'muted', `此视图先显示前 200 条，共 ${items.length} 条。移除前面的内容后可继续查看。`));
     }
     private itemCard(it: Item, local?: 'queue' | 'bookmarks', updates = false): HTMLElement {
-        return renderItemCard(it, {
+        const card = renderItemCard(it, {
             details: item => this.details(item),
             podcast: item => this.details({kind: 'podcast', id: item.podcastId!, title: item.podcastTitle ?? '', sourceUrl: `https://www.xiaoyuzhoufm.com/podcast/${encodeURIComponent(item.podcastId!)}`, restricted: false}),
             play: item => this.player.play(item), queue: (op, item) => this.queue(op, item),
             bookmark: (op, item) => this.bookmark(op, item), external: item => this.external(item), notice: e => this.notice(e)
-        }, local, updates);
+        }, local, updates, this.route === 'subscriptions' ? '节目 · 我的订阅' : '节目');
+        if (it.kind === 'podcast') {
+            if (this.route === 'subscriptions') this.subscriptions.seed({[it.id]:'subscribed'});
+            card.querySelector('.card-actions')?.prepend(this.subscriptions.render(it.id));
+        }
+        return card;
+    }
+    private drawSubscriptionControls() {
+        this.page.querySelectorAll<HTMLElement>('[data-subscription]').forEach(node => {
+            const id = node.dataset.subscription;
+            if (id) node.replaceWith(this.subscriptions.render(id));
+        });
+    }
+    private mergeConfirmedSubscriptions(serverResponse = false) {
+        if (this.listKind !== 'subscriptions' || !this.list) return;
+        const items = new Map(this.list.items.map(item => [item.id, item]));
+        for (const [id, item] of this.confirmedSubscriptions) {
+            // The backend owns lasting receipts. Once a guarded response includes the item,
+            // stop overlaying its temporary frontend copy and preserve server metadata.
+            if (serverResponse && items.has(id) && !this.list.error && this.list.status !== 'error')
+                this.confirmedSubscriptions.delete(id);
+            else if (!items.has(id)) items.set(id, item);
+        }
+        this.list = {...this.list, items: [...items.values()]};
+    }
+    private rememberDiscoveryScroll() {
+        if (this.route !== 'discovery') return;
+        const scroll = document.querySelector<HTMLElement>('.main')!.scrollTop;
+        if (this.discovery.state.showCreator) this.discovery.state.creatorScroll = scroll;
+        else this.discovery.state.scrollTop = scroll;
+    }
+    private drawDiscovery() {
+        if (this.route !== 'discovery') return;
+        const main = document.querySelector<HTMLElement>('.main')!;
+        let scroll = main.scrollTop;
+        const mode = this.discovery.state.showCreator;
+        if (this.discoveryViewMode !== undefined && this.discoveryViewMode !== mode) {
+            if (this.discoveryViewMode) this.discovery.state.creatorScroll = scroll;
+            else this.discovery.state.scrollTop = scroll;
+            scroll = mode ? this.discovery.state.creatorScroll : this.discovery.state.scrollTop;
+        }
+        this.discoveryViewMode = mode;
+        const focused = document.activeElement;
+        const field = focused instanceof HTMLInputElement && focused.id === 'discovery-query' ? focused : undefined;
+        const retainedForm = field && field.value === this.discovery.state.query && !mode ? field.closest('form') : null;
+        const tabId = focused instanceof HTMLElement && focused.id.startsWith('discovery-tab-') ? focused.id : '';
+        const view = renderDiscovery(this.discovery, item => this.itemCard(item, undefined, item.kind === 'episode'));
+        if (retainedForm) view.querySelector('form')?.replaceWith(retainedForm);
+        this.page.replaceChildren(this.heading('探索新播客', '在熟悉的声音之外，遇见新的好内容'), view);
+        if (this.boot.session.state !== 'connected') this.page.append(el('p', 'inline-warning', '连接账号后即可搜索。输入的关键词会为本次登录保留。'));
+        main.scrollTop = scroll;
+        if (retainedForm) field?.focus({preventScroll:true});
+        if (tabId) document.getElementById(tabId)?.focus({preventScroll:true});
+    }
+    private discoveryBack(): HTMLElement {
+        return button(this.discovery.state.showCreator ? '← 返回创作者' : '← 返回探索结果', () => this.navigate('discovery', true), 'button discovery-back');
     }
     private drawUpdates() {
         if (this.route !== 'updates') return;
@@ -344,6 +445,7 @@ export class Application {
             tools.append(button('加载全部', () => this.loadAll(), 'button primary-soft'));
         this.page.replaceChildren(this.heading(name, '云端只读 · 筛选仅作用于已经加载的内容', tools));
         if (this.updatesReturn) this.page.prepend(this.updatesBack());
+        if (this.discoveryReturn) this.page.prepend(this.discoveryBack());
         const bar = el('div', 'list-toolbar');
         const search = el('input', 'search-input');
         search.placeholder = '在已加载内容中筛选';
@@ -399,6 +501,7 @@ export class Application {
             if (generation !== this.routeGeneration || epoch !== this.boot.session.epoch || op !== this.libraryGeneration)
                 return false;
             this.list = view;
+            this.mergeConfirmedSubscriptions(true);
             this.loading = false;
             this.drawLibrary();
             if (mode === 'cached' && (view.status === 'idle' || view.status === 'stale'))
@@ -431,6 +534,8 @@ export class Application {
             this.drawLibrary();
     }
     async details(it: Item) {
+        if (this.route === 'discovery') { this.rememberDiscoveryScroll(); this.discoveryReturn = true; }
+        this.discovery.leave();
         if (this.route === 'updates') { this.updatesReturn = true; this.updates.state.scrollTop = document.querySelector<HTMLElement>('.main')!.scrollTop; }
         this.updates.leave();
         this.stopList();
@@ -447,10 +552,13 @@ export class Application {
         }
         catch (e) {
             if (generation === this.routeGeneration)
-                this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), empty('内容暂时无法打开', describeError(e), button('打开官方原页', () => this.external(it))));
+                this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), ...(this.discoveryReturn ? [this.discoveryBack()] : []), empty('内容暂时无法打开', describeError(e), button('打开官方原页', () => this.external(it))));
         }
     }
     showDetail(it: Item, preserveUpdates = false) {
+        if (this.route === 'discovery') { this.rememberDiscoveryScroll(); this.discoveryReturn = true; }
+        else if (!preserveUpdates) this.discoveryReturn = false;
+        this.discovery.leave();
         if (!preserveUpdates) this.updatesReturn = false;
         this.updates.leave();
         this.stopList();
@@ -469,9 +577,10 @@ export class Application {
         else
             actions.append(button('查看单集列表', () => { this.listKind = 'episodes'; this.podcastID = it.id; this.list = null; this.drawLibrary(); void this.loadLibrary('cached'); }, 'button primary'));
         actions.append(button('保存本地书签', () => this.bookmark('append', it).catch(e => this.notice(e))), button('官方原页 ↗', () => this.external(it), 'text-button'));
+        if (it.kind === 'podcast') { actions.append(this.subscriptions.render(it.id)); if (this.subscriptions.get(it.id).state === 'unknown') void this.subscriptions.check(it.id); }
         text.append(actions);
         hero.append(text);
-        this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), hero);
+        this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), ...(this.discoveryReturn ? [this.discoveryBack()] : []), hero);
         if (it.restricted)
             this.page.append(el('p', 'inline-warning', it.restriction || '此内容受限，首版不支持付费或私有内容。'));
         const notes = renderNotes(it.showNotes || it.description || '暂无说明。', seconds => {

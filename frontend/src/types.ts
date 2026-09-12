@@ -80,6 +80,7 @@ export interface Bootstrap {
     bookmarks: Item[];
     history: Progress[];
     playbackGeneration: number;
+    discoveryGeneration?: number;
     warning?: AppFailure;
 }
 export interface Playback {
@@ -95,3 +96,10 @@ export interface DesktopInfo {
     message?: string;
 }
 export type Call = <T = unknown>(action: string, payload?: unknown) => Promise<T>;
+
+export type SearchKind = 'podcast' | 'episode' | 'user';
+export interface Creator { id: string; nickname: string; avatar?: string; bio?: string }
+export type SubscriptionState = 'subscribed' | 'not_subscribed' | 'unknown';
+export interface SearchPage { items: Item[]; users: Creator[]; subscriptions: Record<string, SubscriptionState>; cursor: string; complete: boolean }
+export interface CreatorPage { creator: Creator; items: Item[]; subscriptions: Record<string, SubscriptionState>; cursor: string; complete: boolean }
+export interface SubscriptionResult { podcastId: string; state: SubscriptionState; item?: Item; warning?: AppFailure }

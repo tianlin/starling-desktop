@@ -57,7 +57,7 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 			safeAction = "unknown"
 		}
 		switch action {
-		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create":
+		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create", "discovery.suggestions", "discovery.search", "discovery.creator", "discovery.history", "subscription.add", "subscription.status":
 		default:
 			safeAction = "unknown"
 		}
@@ -76,6 +76,65 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 }
 func (s *Service) dispatch(ctx context.Context, action, payload string) (any, error) {
 	switch action {
+	case "discovery.suggestions":
+		var v struct {
+			Epoch uint64 `json:"epoch"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.DiscoverySuggestions(ctx, v.Epoch)
+	case "discovery.search":
+		var v struct {
+			Epoch      uint64           `json:"epoch"`
+			Generation uint64           `json:"generation"`
+			Query      string           `json:"query"`
+			Kind       model.SearchKind `json:"kind"`
+			Cursor     string           `json:"cursor"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.DiscoverySearch(ctx, v.Epoch, v.Generation, v.Query, v.Kind, v.Cursor)
+	case "discovery.creator":
+		var v struct {
+			Epoch  uint64 `json:"epoch"`
+			ID     string `json:"id"`
+			Cursor string `json:"cursor"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.DiscoveryCreator(ctx, v.Epoch, v.ID, v.Cursor)
+	case "subscription.status":
+		var v struct {
+			Epoch     uint64 `json:"epoch"`
+			PodcastID string `json:"podcastId"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.SubscriptionStatus(ctx, v.Epoch, v.PodcastID)
+	case "subscription.add":
+		var v struct {
+			Epoch     uint64 `json:"epoch"`
+			PodcastID string `json:"podcastId"`
+			RequestID string `json:"requestId"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.AddSubscription(ctx, v.Epoch, v.PodcastID, v.RequestID)
+	case "discovery.history":
+		var v struct {
+			Epoch uint64 `json:"epoch"`
+			Mode  string `json:"mode"`
+			Query string `json:"query"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.DiscoveryHistory(v.Epoch, v.Mode, v.Query)
 	case "comments.create":
 		var v struct {
 			Epoch            uint64 `json:"epoch"`
