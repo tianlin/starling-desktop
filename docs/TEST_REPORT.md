@@ -8,11 +8,11 @@
 
 | 检查 | 结果与范围 |
 |---|---|
-| 根模块 go test -json -count=1 ./... | 69 个测试/子测试通过，2 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
+| 根模块 go test -json -count=1 ./... | 78 个测试/子测试通过，3 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
 | 根模块 go vet ./... | 通过 |
 | frontend 中 npm test | TypeScript 编译和 13 项 Node 测试通过 |
 | desktop 模块 go test ./... / go vet ./... | 通过编译与静态检查；宿主尚无专用测试文件 |
-| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r3 | 全流程通过，输出独立 Starling-candidate-r3.exe；跳过绑定生成，未启动应用 |
+| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r4 | 全流程通过，输出独立 Starling-candidate-r4.exe；跳过绑定生成，未启动应用 |
 | 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
 | 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，14 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
 | 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
@@ -37,7 +37,7 @@
 
 新增回归覆盖设备 UUID 每客户端稳定且相互独立、不伪装手机、私有库末页规则、异常分页不被覆盖、嵌套错误进入诊断、错误时保留缓存、内存缓存过期和缓存文案。
 
-候选文件 `build/Starling-candidate-r3.exe` SHA-256：`34b08d2a71466796d593225a43e488207529a65cef01b9b4f2c64768658b1b93`。
+候选文件 `build/Starling-candidate-r4.exe` SHA-256：`0a1dab619678be4439b195689617728efe9520a7a27bd13867aa78609ddcdc25`。
 
 本机证据位于 `build/core-tests.jsonl`、`build/vulnerabilities-after.txt`、`build/compliance/`、`docs/test-results/`（均为不提交的构建/测试产物）。不提交真实账号响应。
 
@@ -76,6 +76,16 @@
 此项没有运行真实屏幕阅读器，也不替代原生 WebView2 或 Windows DPI 验收。
 
 依赖材料提交 `65374385e4d56228a3734e6a42a2204349e16250` 的 [CI 34678340168](https://github.com/tianlin/starling-desktop/actions/runs/34678340168) 已全部成功。
+
+## 真实公开页面兼容性
+
+匿名只读检查复现：单集及节目详情可以解析，但节目单集列表实际位于 `pageProps.podcast.episodes`，原适配器只读取顶层 `pageProps.episodes`，因此误报 PUBLIC_UNAVAILABLE。现兼容两种位置；仅在顶层缺失时回退，已有顶层的 null/错误类型不会被掩盖，返回始终保持 Complete=false。8 个表格场景先失败后通过。
+
+2026-09-12 使用两个公开样本：[对坐回声试播集](https://www.xiaoyuzhoufm.com/episode/6967a6f0109824f9e17b5e24)、[迟早更新 Episode 174](https://www.xiaoyuzhoufm.com/episode/616cf175e59c80a91d5ddac0)。单集详情、所属节目及预览列表均通过，预览分别为 1 / 15 条，没有重复 ID；都没有宣称完整分页。只验证媒体地址字段存在及未标记受限，没有下载或播放音频。
+
+手工复查：设置 STARLING_LIVE_PUBLIC_URL 为获准检查的官方公开链接，再运行 `go test -v ./internal/provider -run ^TestLivePublicShare$ -count=1`，结束后移除环境变量。该测试默认跳过，不读 vault，不访问账号 API，不进行续期；日志仅记录结构字段和计数。证据位于 build/live-public-check.txt 和 build/live-public-second-check.txt，不提交网页正文或媒体地址。r4 完整构建和漏洞扫描通过，依赖材料已按 r4 重新生成。
+
+弹窗修复提交 `47e32b952a0af54814aeca6554bb8d7abf349df9` 的 [CI 34678680790](https://github.com/tianlin/starling-desktop/actions/runs/34678680790) 已全部通过。
 
 ## 历史合成测试
 

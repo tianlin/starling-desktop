@@ -10,15 +10,15 @@
 | FR-04 我的订阅 | app/library.go、shell.ts | 本次真实接口两页 30＋10，识别省略游标末页；手机同期核对待执行 |
 | FR-05 收藏单集 | 同上 | 修复缺少设备会话 UUID 导致的 400；真实读取 10 条及空末页；候选 UI/手机数量核对待执行 |
 | FR-06 分页与同步完整性 | provider/page.go、app/library.go | 私有库特定末页规则、去重、异常分页、错误保留完整缓存、缓存过期回归通过；其他端点仍严格处理未知结束 |
-| FR-07 公开链接与详情 | security/urls.go、provider/public.go、notes.ts | 域名与 ID、公开 JSON 解析、HTML 清洗、时间点测试；当前真实公开页面兼容性待测 |
+| FR-07 公开链接与详情 | security/urls.go、provider/public.go、notes.ts | 域名与 ID、公开 JSON 解析、HTML 清洗、时间点测试；已修复公开节目嵌套 episodes 结构；两个真实匿名样本通过单集/节目详情与 1/15 条预览检查，媒体未播放 |
 | FR-08 基础播放 | player.ts、shell.ts | 合成 WAV 的真实浏览器播放、拖动、暂停 / 切歌；Windows 常见媒体格式待测 |
 | FR-09 链接、鉴权与重试 | provider/client.go、app/playback.go、player.ts | 白名单、不传令牌、受限内容拒绝、一次媒体重解析；真实 CDN / Range 待测 |
 | FR-10 稍后听与恢复 | app/playback.go、player.ts、shell.ts | 队列去重 / 排序、成功播放后出队、启动暂停；进程强退与真实错误场景待测 |
 | FR-11 本机续播 | store、app/playback.go、player.ts | 保存、读取、epoch 拒绝、seekable 就绪后续播；断电场景待测 |
 | FR-12 后台与系统控制 | internal/desktop、desktop/main.go | Windows 原生 ABI 测试通过；托盘、媒体键、睡眠/设备切换仍待完整实机验收 |
 | FR-13 设置与数据控制 | app/service.go、settings.ts | 设置/清理测试通过；列表嵌套错误纳入脱敏诊断；WebView 缓存是退出后尽力清理 |
-| FR-14 安装与更新 | scripts/*.ps1、CI | 候选构建脚本全流程通过，含双模块检查与依赖验证；无签名、安装卸载实测或自动更新 |
-| FR-15 可用性 | DOM UI、键盘、错误状态、布局 | 1280×900 / 900×700 浏览器截图与输入保护；Windows DPI / 屏幕阅读器待测 |
+| FR-14 安装与更新 | scripts/*.ps1、CI | 候选构建脚本全流程通过，含双模块检查与依赖验证；隔离安装/升级/卸载 7 项与远端 Windows 测试通过；中文快捷方式修复；无签名、干净 VM 实测或自动更新 |
+| FR-15 可用性 | DOM UI、键盘、错误状态、布局 | 1280×900 / 900×700 浏览器检查与输入保护；弹窗命名、Tab循环、Escape和焦点返回通过；Windows DPI / 屏幕阅读器待测 |
 
 ## 总体验收
 

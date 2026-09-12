@@ -23,7 +23,7 @@
 ## G3 Windows 11 x64
 
 - [x] 在可联网机器构建 Wails production 候选；实际 go.sum 已更新，Go 1.26.8 与哈希见 TEST_REPORT；本次采用跳过绑定生成的 Candidate 流程。
-- [x] 运行所有根模块测试，特别是原生 DPAPI 和 Win32 ABI 测试；69 个测试/子测试通过，显式联网项默认跳过并另记实测。
+- [x] 运行所有根模块测试，特别是原生 DPAPI 和 Win32 ABI 测试；78 个测试/子测试通过，显式联网项默认跳过并另记实测。
 - [ ] 当前用户 DPAPI 可保存 / 读取；复制到另一 Windows 用户后不可解密。
 - [ ] Windows SQLite 实际绑定、中文路径、文件占用、磁盘满与损坏恢复路径验证。
 - [ ] 在 WebView2 中加载本地 UI；CSP 不破坏 Wails 桥，又能阻止恶意内容和越域媒体。
