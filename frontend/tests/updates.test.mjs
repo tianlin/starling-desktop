@@ -46,7 +46,7 @@ test('renderer limits display to 60 and uses keyboard buttons for podcast and sh
   assert.equal(nodes.find(n=>n.className==='cover-link').tag,'button');
   assert.equal(nodes.find(n=>n.textContent==='＋ 稍后听').tag,'button');
   assert.equal(nodes.find(n=>n.className==='episode-description').textContent,'<script>literal</script>');
-  assert.ok(nodes.some(n=>n.className==='inline-warning'));assert.equal(nodes.some(n=>n.textContent==='暂无订阅更新'),false);
+  assert.equal(nodes.some(n=>n.className==='inline-warning'),false);assert.equal(nodes.some(n=>n.textContent==='暂无订阅更新'),false);
   const next=nodes.find(n=>n.textContent==='下一屏');next.listeners.click();assert.equal(c.state.displayPage,1);
  }finally{globalThis.document=previous;}
 });

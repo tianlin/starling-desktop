@@ -479,8 +479,6 @@ export function renderComments(controller, login) {
             container.append(button(reply ? '加载更多回复' : '加载更多评论', load, 'button load-more'));
         if (target.loaded && !target.items.length && target.complete)
             container.append(el('p', 'muted', reply ? '暂无回复。' : '暂无评论。'));
-        else if (target.loaded && !target.complete && !target.cursor)
-            container.append(el('p', 'muted', '平台未提供下一页信息，暂时只能显示已获取的内容。'));
     };
     const list = el('div', 'comment-list');
     list.id = 'comment-order-list';

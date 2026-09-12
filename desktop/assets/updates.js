@@ -166,9 +166,7 @@ export function renderUpdates(c, card) {
         more.disabled = state.loading;
         root.append(more);
     }
-    if (view?.status === 'unknown_end')
-        root.append(el('p', 'inline-warning', '平台未提供可验证的结束标志或下一页游标，无法确认是否已加载全部更新。'));
-    else if (view?.complete && items.length && !state.error)
+    if (view?.complete && items.length && !state.error)
         root.append(el('p', 'muted', '本轮更新已加载完成'));
     return root;
 }

@@ -98,7 +98,6 @@ export function renderUpdates(c: UpdatesController, card: (item: Item) => HTMLEl
         paging.append(back,el('span','muted',`${offset+1}–${Math.min(offset+60,items.length)} / ${items.length} 条已加载内容`),next);root.append(paging);
     }
     if (view?.cursor) { const more = button('加载下一页',()=>c.load('more'),'button load-more');more.disabled=state.loading;root.append(more); }
-    if (view?.status === 'unknown_end') root.append(el('p','inline-warning','平台未提供可验证的结束标志或下一页游标，无法确认是否已加载全部更新。'));
-    else if (view?.complete && items.length && !state.error) root.append(el('p','muted','本轮更新已加载完成'));
+    if (view?.complete && items.length && !state.error) root.append(el('p','muted','本轮更新已加载完成'));
     return root;
 }

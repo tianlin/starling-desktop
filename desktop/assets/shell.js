@@ -578,8 +578,6 @@ export class Application {
         }
         if (this.list?.cursor && !this.loading)
             target.append(button('加载下一页', () => this.loadLibrary('more'), 'button load-more'));
-        if (this.list?.status === 'unknown_end')
-            target.append(el('p', 'inline-warning', '平台未提供可验证的结束标志或下一页游标，此处不宣称已取得完整列表。'));
     }
     async loadLibrary(mode) {
         if (this.loading && mode !== 'cached')
