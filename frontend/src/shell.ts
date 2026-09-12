@@ -148,7 +148,7 @@ export class Application {
     private nativeEvents() {
         window.runtime?.EventsOn('desktop:toggle', () => { void this.player.toggle(); });
         window.runtime?.EventsOn('desktop:pause', () => this.player.pause());
-        window.runtime?.EventsOn('desktop:before-quit', () => { this.player.pause(); void this.player.persist().then(() => call('desktop.quitReady')).catch(e => this.notice(e)); });
+        window.runtime?.EventsOn('desktop:before-quit', () => { this.player.pause(); void this.player.persist().then(() => call('progress.flush', { epoch: this.boot.session.epoch }).catch(() => {})).then(() => call('desktop.quitReady')).catch(e => this.notice(e)); });
         if ('mediaSession' in navigator) {
             const set = (name: MediaSessionAction, fn: MediaSessionActionHandler) => { try {
                 navigator.mediaSession.setActionHandler(name, fn);
@@ -324,7 +324,7 @@ export class Application {
         const actions = button('打开分享链接', () => showLink(this), 'button');
         this.page.replaceChildren(this.heading('让好声音，接着发生。', '不必从头找起，在桌面继续你的收听。', actions));
         const hero = el('div', 'welcome-panel');
-        hero.append(el('div', 'eyebrow', 'LISTEN AT YOUR OWN PACE'), el('h2', '', '留一点时间，给认真听。'), el('p', '', '收藏与订阅来自小宇宙；队列和收听进度留在这台电脑。'));
+        hero.append(el('div', 'eyebrow', 'LISTEN AT YOUR OWN PACE'), el('h2', '', '留一点时间，给认真听。'), el('p', '', '收藏与订阅来自小宇宙；连接账号后，可与手机同步收听进度。'));
         const actions2 = el('div', 'actions');
         actions2.append(button(this.boot.session.identity ? '查看收藏单集' : '连接小宇宙账号', () => this.boot.session.identity ? this.navigate('favorites') : showAccount(this), 'button primary'), button('粘贴公开链接', () => showLink(this), 'button transparent'));
         hero.append(actions2, el('span', 'hero-orbit'));
@@ -645,7 +645,7 @@ export class Application {
         const p = this.player;
         if (!p)
             return;
-        const names: Record<string, string> = { idle: '进度仅保存在本机', resolving: '正在解析音频…', buffering: '缓冲中…', playing: '正在播放', paused: '已暂停', ended: '本机已听完', error: '播放失败' };
+        const names: Record<string, string> = { idle: '等待播放', resolving: '正在解析音频…', buffering: '缓冲中…', playing: '正在播放', paused: '已暂停', ended: '已听完', error: '播放失败' };
         const play = document.querySelector<HTMLButtonElement>('#toggle-play')!;
         const active = ['resolving', 'buffering', 'playing'].includes(p.state);
         play.disabled = !p.item;
@@ -671,7 +671,13 @@ export class Application {
         document.querySelector<HTMLButtonElement>('#forward')!.disabled = !p.seekable;
         document.querySelector('#queue-count')!.textContent = String(this.boot?.queue.length ?? 0);
         const message = document.querySelector<HTMLElement>('#player-message')!;
-        message.textContent = p.error || p.notice;
+        message.textContent = p.error || p.notice || p.syncNotice;
+        if (p.conflict) {
+            message.replaceChildren(el('span', '', '本机和云端进度不同，请选择继续位置：'),
+                button('从本机 ' + formatTime(p.conflict.localPosition) + ' 继续', () => { void p.chooseProgress('local'); }),
+                button('从云端 ' + formatTime(p.conflict.cloudPosition) + ' 继续', () => { void p.chooseProgress('cloud'); }));
+            if (p.syncNotice) message.append(el('span', '', p.syncNotice));
+        }
         message.hidden = !message.textContent;
         if ('mediaSession' in navigator) {
             try {

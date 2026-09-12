@@ -54,7 +54,7 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 	if diagnosticError != nil {
 		safeAction := action
 		switch action {
-		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.cancelLogin", "account.qrStart", "account.qrPoll", "account.qrCancel", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create", "discovery.suggestions", "discovery.search", "discovery.creator", "discovery.history", "subscription.add", "subscription.status":
+		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.cancelLogin", "account.qrStart", "account.qrPoll", "account.qrCancel", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "progress.prepare", "progress.choose", "progress.status", "progress.retry", "progress.flush", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create", "discovery.suggestions", "discovery.search", "discovery.creator", "discovery.history", "subscription.add", "subscription.status":
 		default:
 			safeAction = "unknown"
 		}
@@ -311,15 +311,44 @@ func (s *Service) dispatch(ctx context.Context, action, payload string) (any, er
 			return nil, s.CancelResolveAt(v.Epoch, *v.Generation, v.RequestID)
 		}
 		return nil, s.CancelResolve(v.Epoch, v.RequestID)
-	case "progress.save":
+	case "progress.prepare", "progress.choose":
 		var v struct {
-			Epoch    uint64         `json:"epoch"`
-			Progress model.Progress `json:"progress"`
+			Epoch  uint64 `json:"epoch"`
+			EID    string `json:"eid"`
+			Token  string `json:"token"`
+			Choice string `json:"choice"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
 		}
-		return nil, s.SaveProgress(v.Epoch, v.Progress)
+		if action == "progress.choose" {
+			return s.ChooseProgress(ctx, v.Epoch, v.EID, v.Token, v.Choice)
+		}
+		return s.PrepareProgress(ctx, v.Epoch, v.EID)
+	case "progress.status", "progress.retry", "progress.flush":
+		var v struct {
+			Epoch uint64 `json:"epoch"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		if action == "progress.retry" {
+			return s.ProgressRetry(ctx, v.Epoch)
+		}
+		if action == "progress.flush" {
+			return s.FlushProgress(ctx, v.Epoch)
+		}
+		return s.ProgressStatus(v.Epoch)
+	case "progress.save":
+		var v struct {
+			Epoch    uint64         `json:"epoch"`
+			Progress model.Progress `json:"progress"`
+			Urgent   bool           `json:"urgent"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return nil, s.SaveProgressUrgent(v.Epoch, v.Progress, v.Urgent)
 	case "queue", "bookmarks":
 		var v struct {
 			Epoch uint64     `json:"epoch"`

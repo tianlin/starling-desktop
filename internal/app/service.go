@@ -14,9 +14,21 @@ import (
 	"time"
 )
 
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 type Service struct {
+	progressCtx           context.Context
+	progressStop          context.CancelFunc
+	progressCancel        context.CancelFunc
+	progressWake          chan struct{}
+	progressGate          chan struct{}
+	progressJobs          sync.WaitGroup
+	progressBusy          bool
+	progressStatusEpoch   uint64
+	progressLastSuccess   string
+	progressMessage       string
+	progressRetryAt       time.Time
+	progressFailures      int
 	p                     provider.Provider
 	store                 *store.Store
 	session               *session.Manager
@@ -70,9 +82,12 @@ func New(p provider.Provider, db *store.Store, v security.Vault) *Service {
 			s.settings = settings
 		}
 	}
+	s.initProgress()
 	return s
 }
 func (s *Service) Close() {
+	s.progressStop()
+	s.progressJobs.Wait()
 	s.session.Close()
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -100,6 +115,9 @@ func (s *Service) SaveSettings(v model.Settings) error {
 		defer s.mu.Unlock()
 		if e := s.store.Put("global", "settings", "main", v); e != nil {
 			return e
+		}
+		if v.ProgressSyncDisabled && s.progressCancel != nil {
+			s.progressCancel()
 		}
 		s.settings = v
 		s.startupError = nil
@@ -136,7 +154,28 @@ func (s *Service) Bootstrap() (Bootstrap, error) {
 			if json.Unmarshal(raw, &p) != nil {
 				return model.Err("DISK", "本机收听记录损坏。")
 			}
-			b.History = append(b.History, p)
+			r, e := s.loadProgress(scope, p.Item.ID)
+			if e != nil {
+				return e
+			}
+			b.History = append(b.History, r.Local)
+		}
+		syncRows, e := s.store.List(scope, "progress-sync")
+		if e != nil {
+			return e
+		}
+		seen := map[string]bool{}
+		for _, p := range b.History {
+			seen[p.Item.ID] = true
+		}
+		for _, raw := range syncRows {
+			var r progressRecord
+			if json.Unmarshal(raw, &r) != nil {
+				return model.Err("DISK", "本机收听记录损坏。")
+			}
+			if r.Local.Item.ID != "" && !seen[r.Local.Item.ID] {
+				b.History = append(b.History, r.Local)
+			}
 		}
 		sort.Slice(b.History, func(i, j int) bool { return b.History[i].UpdatedAt > b.History[j].UpdatedAt })
 		if len(b.History) > 100 {

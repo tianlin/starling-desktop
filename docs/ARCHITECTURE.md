@@ -36,6 +36,10 @@ Windows 使用 System32 的 `winsqlite3.dll`，不要求 CGo；Linux 自动化�
 
 Win32 辅助窗口接收托盘、热键和电源消息，能力失败反馈到界面；睡眠/恢复和设备移除采用保守暂停。实体媒体键、Explorer 重启、设备冲突及 WebView2 长时间播放的验证范围见 [REMAINING_WORK.md](REMAINING_WORK.md)。
 
+## 云端播放进度
+
+可选 ProgressProvider 提供批量读取和更新。播放前最多等待 3 秒查询，显式定位优先；后台每 15 秒合并上传，暂停等操作及时触发。SQLite 单行原子保存本地进度、云端基线、待上传快照与修订号；网络回执校验 epoch 与修订。失败先回读，无法排序的双端变化交由用户选择，退出最多等待 2 秒同步。完整协议、恢复规则与验证范围见 [PROGRESS_SYNC.md](PROGRESS_SYNC.md)。
+
 ## 内容和存储安全
 
 Wails 资源带 CSP；说明经惰性模板解析后重构允许的文本节点，不复制原属性或执行原 HTML。API、媒体、图片及外部链接各自校验 URL；外链经宿主验证才交给默认浏览器。SQLite 使用绑定参数。WebView 使用独立临时运行目录，退出及下次启动尽力清理；不承诺即时或取证级擦除。完整边界见 [SECURITY.md](../SECURITY.md) 和 [PRIVACY.md](../PRIVACY.md)。
