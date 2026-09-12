@@ -49,6 +49,9 @@ func New(dir, host string) (*Server, error) {
 	f := &testkit.Fake{}
 	installCommentFixtures(f)
 	f.ListFunc = func(ctx context.Context, token, kind, pid, cursor string) (model.Page, error) {
+		if kind == "updates" {
+			return updatesPage(cursor)
+		}
 		var items []model.Item
 		if kind == "subscriptions" {
 			for i := 0; i < 4; i++ {
@@ -73,6 +76,13 @@ func New(dir, host string) (*Server, error) {
 		return model.Page{Items: items[3:], Complete: true}, nil
 	}
 	f.DetailFunc = func(ctx context.Context, token, kind, id string) (model.Item, error) {
+		if kind == "episode" {
+			for i := 0; i < 85; i++ {
+				if it := updateSample(i); it.ID == id {
+					return it, nil
+				}
+			}
+		}
 		for i := 0; i < 8; i++ {
 			it := sample(i)
 			if id == it.ID && kind == "episode" {

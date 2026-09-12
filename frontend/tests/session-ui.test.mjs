@@ -54,3 +54,23 @@ test('startup restore bootstrap cannot overwrite an interactive login', async ()
     assert.equal(app.drawn, 'connected');
     delete globalThis.window;
 });
+test('successful cache clear invalidates retained updates; stale account completion cannot clear new account state',async()=>{
+ let finish;globalThis.window={go:{main:{App:{Call:()=>new Promise(r=>finish=r)}}}};
+ let invalidations=0;const app=Object.assign(Object.create(Application.prototype),{boot:{session:{epoch:1}},updates:{invalidate(){invalidations++;}},updatesReturn:true,route:'settings'});
+ try { const clearing=app.clearCache();assert.equal(invalidations,0);finish(JSON.stringify({ok:true,data:{}}));await clearing;assert.equal(invalidations,1);assert.equal(app.updatesReturn,false);
+ const stale=app.clearCache();app.boot.session.epoch=2;finish(JSON.stringify({ok:true,data:{}}));await stale;assert.equal(invalidations,1);
+ }finally{delete globalThis.window;}
+});
+test('updates podcast cover passes the canonical official URL to detail failure fallback',()=>{
+ class Node {constructor(tag){this.tag=tag;this.children=[];this.dataset={};this.listeners={};}append(...nodes){this.children.push(...nodes);}setAttribute(){}addEventListener(k,v){this.listeners[k]=v;}}
+ const previous=globalThis.document;globalThis.document={createElement:tag=>new Node(tag)};let selected;
+ try { const app=Object.assign(Object.create(Application.prototype),{details:async it=>{selected=it;}});
+ const card=app.itemCard({id:'episode',kind:'episode',title:'单集',podcastId:'abc123',podcastTitle:'节目',sourceUrl:'https://www.xiaoyuzhoufm.com/episode/episode'},undefined,true);
+ card.children.find(n=>n.className==='cover-link').listeners.click();assert.equal(selected.sourceUrl,'https://www.xiaoyuzhoufm.com/podcast/abc123');assert.equal(selected.kind,'podcast');assert.equal(selected.id,'abc123');
+ }finally{globalThis.document=previous;}
+});
+test('failed cache clear keeps usable retained updates',async()=>{
+ globalThis.window={go:{main:{App:{Call:async()=>JSON.stringify({ok:false,error:{code:'STORAGE',message:'disk failure'}})}}}};
+ let invalidations=0;const app=Object.assign(Object.create(Application.prototype),{boot:{session:{epoch:1}},updates:{invalidate(){invalidations++;}},route:'settings'});
+ try {await assert.rejects(app.clearCache(),/disk failure/);assert.equal(invalidations,0);}finally{delete globalThis.window;}
+});

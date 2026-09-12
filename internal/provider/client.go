@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const AdapterVersion = "xyz-comments-2026-09-12.2"
+const AdapterVersion = "xyz-updates-2026-09-12.1"
 const userAgent = "Starling/0.1.0-alpha (unofficial desktop podcast client)"
 
 type Client struct {
@@ -152,6 +152,14 @@ func (c *Client) List(ctx context.Context, token, kind, pid, cursor string) (mod
 	path := ""
 	itemKind := "episode"
 	switch kind {
+	case "updates":
+		path = "/v1/inbox/list"
+		body["limit"] = "20"
+		if key != nil {
+			if e := validateUpdatesCursor(key); e != nil {
+				return out, e
+			}
+		}
 	case "subscriptions":
 		path = "/v1/subscription/list"
 		body["sortOrder"] = "desc"
@@ -189,6 +197,15 @@ func (c *Client) List(ctx context.Context, token, kind, pid, cursor string) (mod
 	items, next, complete, e := DecodePage(env)
 	if e != nil {
 		return out, e
+	}
+	if kind == "updates" && next != "" {
+		raw, err := DecodeCursor(next)
+		if err != nil {
+			return out, err
+		}
+		if err = validateUpdatesCursor(raw); err != nil {
+			return out, model.Err("BAD_RESPONSE", "订阅更新分页游标结构无效。")
+		}
 	}
 	// Live-checked 2026-09-12: these two endpoints omit loadMoreKey on
 	// terminal pages (including nonempty subscription pages). Keep this

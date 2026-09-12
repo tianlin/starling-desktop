@@ -31,6 +31,9 @@ func cachedView(v model.LibraryView) model.LibraryView {
 
 // Library stages partial pages in memory. Only a proven end replaces the complete SQLite snapshot.
 func (s *Service) Library(ctx context.Context, epoch uint64, kind, pid, mode string) (model.LibraryView, error) {
+	if kind == "updates" {
+		return s.updates(ctx, epoch, mode)
+	}
 	var out model.LibraryView
 	if kind != "favorites" && kind != "subscriptions" && kind != "episodes" {
 		return out, model.Err("UNSUPPORTED", "不支持的列表类型。")

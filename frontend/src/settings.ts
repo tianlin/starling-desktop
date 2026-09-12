@@ -223,7 +223,7 @@ export function showSettings(app: Application) {
     close.addEventListener('change', () => { app.boot.settings.closeBehavior = close.value as typeof app.boot.settings.closeBehavior; void app.saveSettings().catch(e => app.notice(e)); });
     section('关闭主窗口', app.desktop.tray ? '托盘可显示窗口、播放 / 暂停或退出。' : '当前宿主尚未报告托盘能力；无法隐藏时会明确提示。', close);
     section('媒体键', app.desktop.mediaKey ? '原生媒体键已注册；实际键盘与系统冲突仍需实机验证。' : '使用宿主 Media Session 能力；本环境未验证 Windows 媒体键。');
-    section('清除列表缓存', '不会退出账号，也不会删除书签、队列或收听进度。', button('清除缓存', () => { void call('cache.clear', { epoch: app.boot.session.epoch }).then(() => app.notice('列表缓存已清除。')).catch(e => app.notice(e)); }));
+    section('清除列表缓存', '不会退出账号，也不会删除书签、队列或收听进度。', button('清除缓存', () => { void app.clearCache().then(() => app.notice('列表缓存已清除。')).catch(e => app.notice(e)); }));
     section('本地诊断', '仅保存本次进程最近 100 条业务错误码，不包含账号、令牌或收听内容。', button('查看诊断', () => { void call('diagnostics').then(data => { const body = openModal(app, '诊断预览'); body.append(el('pre', 'diagnostics', JSON.stringify(data, null, 2)), button('保存到文件', () => { void call('desktop.exportDiagnostics').then(() => app.notice('诊断保存操作已结束。')).catch(e => app.notice(e)); })); }).catch(e => app.notice(e)); }));
     section('重置全部本地数据', '清除本应用凭据、账号与访客书签、队列、进度和设置。无法撤销；不承诺取证级安全擦除。', button('重置数据', () => { if (!confirm('确定清除 Starling 的全部本地数据？此操作无法撤销。'))
         return; app.player.pause(); void app.player.persist().then(() => call('data.reset', { epoch: app.boot.session.epoch, confirm: 'RESET' })).then(() => { app.player.clear(); return app.reload(); }).then(() => app.navigate('home')).catch(e => app.notice(e)); }, 'button danger'));

@@ -2,6 +2,27 @@
 
 验证记录更新：2026-09-12。源码开发版，不是签名安装包或完成真实账号验收的正式版本。
 
+## 订阅更新独立分支（2026-09-12）
+
+分支 `codex/subscription-updates` 从 `a4b6deb` 创建，未合入原 `codex/comments` 后续提交。适配器 `xyz-updates-2026-09-12.1`，实现与接口边界见 [订阅更新说明](SUBSCRIPTION_UPDATES.md)。
+
+| 检查 | 本次结果 |
+| --- | --- |
+| 基线 | 根模块 Go 测试及前端原有 46 项测试通过 |
+| 根模块 `go test -json -count=1 ./...` / `go vet ./...` | 139 个测试/子测试通过，6 个联网测试默认跳过；静态检查通过 |
+| 前端 `npm test` | TypeScript 编译及 57 项测试通过；包含更新流控制器、缓存失效、排序、渲染和共享卡片回归 |
+| desktop `go test ./...` / `go vet ./...` | 通过，无宿主专用测试文件 |
+| 更新页 `tests/e2e/updates.py` | 7 组通过，85 条合成单集、三页含边界重复、60/25 显示分页、键盘播放、队列、详情与播客返回位置、失败重试、空态、未知结束及退出隔离 |
+| 既有浏览器回归 | 主界面 16 组、评论 11 组、编码音频 6 组、媒体错误 4 组通过 |
+| 真实订阅更新只读检查 | 两页 HTTP 200，15 + 15 条，元数据与游标可解析；发现一次发布时间逆序，已加载内容排序处理。完整历史、末页和手机端逐集核对未验收 |
+| Windows 候选构建 | `build-windows.ps1 -Candidate -CandidateName Starling-candidate-updates -SkipTests` 成功；测试已单独运行，依赖校验与 Wails production 编译通过 |
+
+候选 `build/Starling-candidate-updates.exe`，11,411,456 字节，SHA-256 为 `02ba0684ee9d08bb17a78608acebfec872d9ae367df2666548ea791c64390d1a`；独立哈希清单为 `build/SHA256SUMS-candidate-updates.txt`。未启动、安装或替换用户运行中的程序。
+
+已查看合成截图 `docs/test-results/updates-desktop.png`（1280×900）与 `updates-narrow.png`（900×720）：没有横向溢出，卡片与常驻播放器布局正常，长标题省略。浏览器结果为 `updates-results.json`，完整 Go 测试事件在忽略的 `build/updates-go-tests.jsonl`。
+
+交叉代码审查修正了更新请求账号代次绑定、清缓存后的前端状态失效、播客详情错误回退链接三个问题；复查无其他实质问题。这是本地审查，不是 CodeRabbit 报告。CI 已增加合成更新页测试，但远端 CI 未执行。本节不表示原生 WebView2 实机或完整真实账号验收，也不沿用历史候选的漏洞扫描结论。
+
 ## 评论发表增量与最终候选（2026-09-12）
 
 适配器 `xyz-comments-2026-09-12.2`。在阅读提交 `c26a704` 上增加一级纯文字发表、无续期重放的写会话路径、当前 epoch 的请求 ID 防重复及串行准入、结果未确认提示、草稿隔离和手动核对流程。发表正文不进入诊断或持久化存储。独立本地审查未发现需修正的问题；不是 CodeRabbit 报告。

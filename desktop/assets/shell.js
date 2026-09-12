@@ -1,12 +1,14 @@
 import { call, describeError, openExternal } from './api.js';
 import { Player } from './player.js';
 import { el, button, cover, empty } from './dom.js';
-import { formatTime, formatDate, libraryStatus, canUseSpace } from './util.js';
+import { formatTime, libraryStatus, canUseSpace } from './util.js';
 import { renderNotes } from './notes.js';
 import { CommentsController, renderComments } from './comments.js';
 import { showAccount, showLink, showSettings } from './settings.js';
-const titles = { home: '继续收听', subscriptions: '我的订阅', favorites: '收藏单集', bookmarks: '本地书签', queue: '稍后听', settings: '设置' };
-const navIcons = { home: '◷', subscriptions: '▤', favorites: '♡', bookmarks: '▱', queue: '☷', settings: '⚙' };
+import { renderItemCard } from './item-card.js';
+import { UpdatesController, renderUpdates } from './updates.js';
+const titles = { home: '继续收听', updates: '订阅更新', subscriptions: '我的订阅', favorites: '收藏单集', bookmarks: '本地书签', queue: '稍后听', settings: '设置' };
+const navIcons = { home: '◷', updates: '◉', subscriptions: '▤', favorites: '♡', bookmarks: '▱', queue: '☷', settings: '⚙' };
 export class Application {
     boot;
     desktop = { tray: false, mediaKey: false, demo: false };
@@ -27,9 +29,13 @@ export class Application {
     saveSettingsChain = Promise.resolve();
     lastMediaID = '';
     libraryGeneration = 0;
+    updates = new UpdatesController(call);
+    updatesReturn = false;
     comments = new CommentsController(call);
     listCancellation = Promise.resolve();
     constructor() {
+        this.updates.onChange = () => this.drawUpdates();
+        this.updates.onUnauthorized = () => { void this.reload(); };
         this.player = new Player(document.querySelector('#audio'), call, () => this.boot?.session.epoch ?? 0, () => this.drawPlayer());
         this.player.onPlayable = it => { void this.queue('remove', it).catch(e => this.notice(e)); };
         this.player.onEnded = () => {
@@ -148,6 +154,18 @@ export class Application {
         }
     }
     applySettings() { this.player.audio.volume = this.boot.settings.volume; this.player.audio.playbackRate = this.boot.settings.rate; document.querySelector('#volume').value = String(this.boot.settings.volume); document.querySelector('#rate').value = String(this.boot.settings.rate); }
+    async clearCache() {
+        const epoch = this.boot.session.epoch;
+        await call('cache.clear', { epoch });
+        if (epoch !== this.boot.session.epoch)
+            return;
+        this.updates.invalidate();
+        this.updatesReturn = false;
+        if (this.route === 'updates') {
+            this.drawUpdates();
+            await this.updates.enter();
+        }
+    }
     async saveSettings() {
         const settings = { ...this.boot.settings };
         const task = this.saveSettingsChain.then(() => call('settings.save', settings)).then(() => { });
@@ -159,7 +177,12 @@ export class Application {
         const boot = await call('bootstrap');
         if (generation !== this.reloadGeneration || boot.session.epoch < (this.boot?.session.epoch ?? 0))
             return;
+        if (this.boot && (this.boot.session.epoch !== boot.session.epoch || this.boot.session.identity?.id !== boot.session.identity?.id))
+            this.updatesReturn = false;
         this.boot = boot;
+        this.updates?.setSession(boot.session);
+        if (this.updates && this.route === 'updates')
+            this.drawUpdates();
         this.comments?.setSession(boot.session);
         this.player.observeGeneration(boot.playbackGeneration ?? 0);
         this.applySettings();
@@ -235,11 +258,15 @@ export class Application {
         }
         this.loading = false;
     }
-    async navigate(name) {
+    async navigate(name, returning = false) {
         if (!this.boot)
             return;
         this.stopList();
         this.comments.leave();
+        if (this.route === 'updates')
+            this.updates.state.scrollTop = document.querySelector('.main').scrollTop;
+        this.updates.leave();
+        this.updatesReturn = false;
         this.route = name;
         this.routeGeneration++;
         this.list = null;
@@ -248,6 +275,18 @@ export class Application {
         this.filter = '';
         this.displayPage = 0;
         document.querySelectorAll('[data-route]').forEach(b => { b.classList.toggle('active', b.dataset.route === name); b.setAttribute('aria-current', b.dataset.route === name ? 'page' : 'false'); });
+        if (name === 'updates') {
+            this.updates.setSession(this.boot.session);
+            if (this.boot.session.state !== 'connected') {
+                this.page.replaceChildren(this.heading('订阅更新', '订阅节目的最新单集'), empty('连接账号后查看', '连接小宇宙账号后获取订阅更新。', button('连接小宇宙账号', () => showAccount(this), 'button primary')));
+                return;
+            }
+            this.drawUpdates();
+            if (returning)
+                document.querySelector('.main').scrollTop = this.updates.state.scrollTop;
+            await this.updates.enter();
+            return;
+        }
         if (name === 'settings') {
             showSettings(this);
             return;
@@ -332,39 +371,25 @@ export class Application {
         if (items.length > 200)
             this.page.append(el('p', 'muted', `此视图先显示前 200 条，共 ${items.length} 条。移除前面的内容后可继续查看。`));
     }
-    itemCard(it, local) {
-        const card = el('article', `episode-card${it.kind === 'podcast' ? ' podcast-card' : ''}`);
-        card.dataset.id = it.id;
-        const art = cover(it, true);
-        card.append(art);
-        const content = el('div', 'episode-content');
-        const over = el('div', 'episode-meta', it.kind === 'podcast' ? '节目 · 我的订阅' : (it.podcastTitle ?? '播客单集'));
-        content.append(over, button(it.title, () => this.details(it), 'episode-title'), el('p', 'episode-description', it.description ?? ''));
-        const meta = [formatDate(it.published), it.duration ? `${Math.round(it.duration / 60)} 分钟` : '', it.restricted ? '受限内容' : ''].filter(Boolean).join('  ·  ');
-        content.append(el('small', 'muted', meta));
-        card.append(content);
-        const actions = el('div', 'card-actions');
-        if (it.kind === 'episode')
-            actions.append(button('▶ 播放', () => this.player.play(it), 'button small primary-soft'));
-        const more = document.createElement('details');
-        more.className = 'more-menu';
-        const summary = el('summary', '', '···');
-        summary.setAttribute('aria-label', `${it.title} 的更多操作`);
-        more.append(summary);
-        const menu = el('div', 'menu-panel');
-        const act = (text, fn) => menu.append(button(text, () => { more.open = false; void fn().catch(e => this.notice(e)); }, 'menu-item'));
-        if (it.kind === 'episode') {
-            act('加入稍后听', () => this.queue('append', it));
-            act('下一集播放', () => this.queue('next', it));
+    itemCard(it, local, updates = false) {
+        return renderItemCard(it, {
+            details: item => this.details(item),
+            podcast: item => this.details({ kind: 'podcast', id: item.podcastId, title: item.podcastTitle ?? '', sourceUrl: `https://www.xiaoyuzhoufm.com/podcast/${encodeURIComponent(item.podcastId)}`, restricted: false }),
+            play: item => this.player.play(item), queue: (op, item) => this.queue(op, item),
+            bookmark: (op, item) => this.bookmark(op, item), external: item => this.external(item), notice: e => this.notice(e)
+        }, local, updates);
+    }
+    drawUpdates() {
+        if (this.route !== 'updates')
+            return;
+        if (this.boot.session.state !== 'connected') {
+            this.page.replaceChildren(this.heading('订阅更新', '订阅节目的最新单集'), empty('连接账号后查看', '连接小宇宙账号后获取订阅更新。', button('连接小宇宙账号', () => showAccount(this), 'button primary')));
+            return;
         }
-        if (local === 'queue')
-            act('从队列移除', () => this.queue('remove', it));
-        act(local === 'bookmarks' ? '移除本地书签' : '保存本地书签', () => this.bookmark(local === 'bookmarks' ? 'remove' : 'append', it));
-        act('打开官方原页', () => this.external(it));
-        more.append(menu);
-        actions.append(more);
-        card.append(actions);
-        return card;
+        this.page.replaceChildren(this.heading('订阅更新', '按发布时间整理已加载单集 · 可继续加载下一页'), renderUpdates(this.updates, it => this.itemCard(it, undefined, true)));
+    }
+    updatesBack() {
+        return button('← 返回订阅更新', () => this.navigate('updates', true), 'button updates-back');
     }
     drawLibrary() {
         const name = this.route === 'detail' ? '节目单集' : titles[this.route] ?? '播客库';
@@ -375,6 +400,8 @@ export class Application {
         else if (this.list?.cursor)
             tools.append(button('加载全部', () => this.loadAll(), 'button primary-soft'));
         this.page.replaceChildren(this.heading(name, '云端只读 · 筛选仅作用于已经加载的内容', tools));
+        if (this.updatesReturn)
+            this.page.prepend(this.updatesBack());
         const bar = el('div', 'list-toolbar');
         const search = el('input', 'search-input');
         search.placeholder = '在已加载内容中筛选';
@@ -462,6 +489,11 @@ export class Application {
             this.drawLibrary();
     }
     async details(it) {
+        if (this.route === 'updates') {
+            this.updatesReturn = true;
+            this.updates.state.scrollTop = document.querySelector('.main').scrollTop;
+        }
+        this.updates.leave();
         this.stopList();
         this.comments.leave();
         this.route = 'detail';
@@ -472,14 +504,17 @@ export class Application {
             const detail = await call('detail', { epoch, kind: it.kind, id: it.id });
             if (generation !== this.routeGeneration || epoch !== this.boot.session.epoch)
                 return;
-            this.showDetail(detail);
+            this.showDetail(detail, true);
         }
         catch (e) {
             if (generation === this.routeGeneration)
-                this.page.replaceChildren(empty('内容暂时无法打开', describeError(e), button('打开官方原页', () => this.external(it))));
+                this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), empty('内容暂时无法打开', describeError(e), button('打开官方原页', () => this.external(it))));
         }
     }
-    showDetail(it) {
+    showDetail(it, preserveUpdates = false) {
+        if (!preserveUpdates)
+            this.updatesReturn = false;
+        this.updates.leave();
         this.stopList();
         this.comments.leave();
         this.route = 'detail';
@@ -498,7 +533,7 @@ export class Application {
         actions.append(button('保存本地书签', () => this.bookmark('append', it).catch(e => this.notice(e))), button('官方原页 ↗', () => this.external(it), 'text-button'));
         text.append(actions);
         hero.append(text);
-        this.page.replaceChildren(hero);
+        this.page.replaceChildren(...(this.updatesReturn ? [this.updatesBack()] : []), hero);
         if (it.restricted)
             this.page.append(el('p', 'inline-warning', it.restriction || '此内容受限，首版不支持付费或私有内容。'));
         const notes = renderNotes(it.showNotes || it.description || '暂无说明。', seconds => {
