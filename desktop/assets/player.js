@@ -9,6 +9,13 @@ export class Player {
     mediaError = '';
     progressError = '';
     get error() { return this.mediaError || this.progressError; }
+    get notice() {
+        if (!this.resolved)
+            return '';
+        if (this.seekOnLoad > 0)
+            return '尚未恢复到上次位置：当前音频暂时无法定位，原进度会保留。';
+        return this.seekable ? '' : '当前音频暂不支持定位，已禁用进度拖动和快进、后退。';
+    }
     onPlayable = () => { };
     onEnded = () => { };
     serial = 0;
@@ -37,8 +44,8 @@ export class Player {
             this.applyInitialSeek();
             this.notify();
         });
-        this.listen('canplay', () => this.applyInitialSeek());
-        this.listen('progress', () => this.applyInitialSeek());
+        this.listen('canplay', () => { this.applyInitialSeek(); this.notify(); });
+        this.listen('progress', () => { this.applyInitialSeek(); this.notify(); });
         this.listen('playing', () => {
             if (this.resolved) {
                 this.state = 'playing';
@@ -63,8 +70,10 @@ export class Player {
             if (!this.resolved)
                 return;
             this.applyInitialSeek();
-            if (this.seekOnLoad > 0)
+            if (this.seekOnLoad > 0) {
+                this.notify();
                 return;
+            }
             this.savedPosition = audio.currentTime;
             if (Date.now() - this.lastSave >= 5000)
                 this.save(false);
@@ -74,6 +83,7 @@ export class Player {
             if (!this.resolved)
                 return;
             this.state = 'ended';
+            this.seekOnLoad = 0;
             this.savedPosition = this.duration;
             this.save(true);
             this.notify();
@@ -88,7 +98,7 @@ export class Player {
             const code = audio.error?.code;
             if (['playing', 'buffering'].includes(this.state) && !this.retried && (code === 2 || code === 4) && this.item) {
                 this.retried = true;
-                void this.start(this.item, false, this.position);
+                void this.start(this.item, false, this.seekOnLoad || this.position);
                 return;
             }
             this.state = 'error';
@@ -97,18 +107,32 @@ export class Player {
         });
     }
     applyInitialSeek() {
-        if (this.seekOnLoad > 0 && this.seekable) {
-            this.seek(this.seekOnLoad);
+        if (!this.resolved || this.seekOnLoad <= 0)
+            return;
+        // A non-seekable stream can still reach the old checkpoint by playing.
+        if (this.audio.currentTime >= this.seekOnLoad) {
+            this.seekOnLoad = 0;
+            this.savedPosition = this.audio.currentTime;
         }
+        else if (this.seekable)
+            this.seek(this.seekOnLoad);
     }
     listen(name, fn) { const handler = fn; this.audio.addEventListener(name, handler); this.listeners.push([name, handler]); }
     notify() {
         if (!this.disposed)
             this.changed();
     }
-    get position() { return this.resolved && this.seekOnLoad === 0 ? this.audio.currentTime : this.savedPosition; }
+    get position() { return this.resolved ? this.audio.currentTime : this.savedPosition; }
     get duration() { return this.resolved && Number.isFinite(this.audio.duration) ? this.audio.duration : this.savedDuration; }
-    get seekable() { return this.resolved && this.audio.seekable.length > 0 && this.duration > 0; }
+    get seekable() {
+        if (!this.resolved || this.duration <= 0)
+            return false;
+        for (let i = 0; i < this.audio.seekable.length; i++) {
+            if (this.audio.seekable.end(i) > this.audio.seekable.start(i))
+                return true;
+        }
+        return false;
+    }
     restore(p) { this.item = p.item; this.itemEpoch = this.epoch(); this.savedPosition = p.ended ? 0 : p.position; this.savedDuration = p.duration; this.state = 'paused'; this.notify(); }
     async play(it) { this.retried = false; return this.start(it, true); }
     async start(it, manual, position) {

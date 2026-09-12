@@ -34,6 +34,8 @@ jobs:
           python -m playwright install --with-deps chromium
       - name: Run synthetic browser regression (no real accounts)
         run: python tests/e2e/run.py
+      - name: Verify encoded media and Range fallback with the production Player
+        run: python tests/e2e/media.py
       - name: Upload synthetic browser evidence
         if: always()
         uses: actions/upload-artifact@v4

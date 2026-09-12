@@ -59,7 +59,7 @@ test('early playback events cannot overwrite a resume checkpoint that is still u
  const {p,audio}=fixture(()=>({item:item('a'),url:'https://media.xyzcdn.net/a.wav',position:checkpoint,epoch:1}),{save:({progress})=>{checkpoint=progress.position;}});
  audio.seekable={length:1,start:()=>0,end:()=>10};await p.play(item('a'));
  audio.currentTime=2;audio.dispatchEvent(new Event('timeupdate'));p.pause();await p.persist();
- assert.equal(checkpoint,42);assert.equal(p.position,42);
+ assert.equal(checkpoint,42);assert.equal(p.position,2);
  audio.seekable={length:1,start:()=>0,end:()=>120};audio.dispatchEvent(new Event('progress'));
  assert.equal(audio.currentTime,42);audio.currentTime=43;await p.persist();assert.equal(checkpoint,43);await p.dispose();
 });
@@ -118,4 +118,24 @@ for(const transition of ['selection','clear','account'])test(`a rejected old res
  if(transition==='account')currentEpoch=2;
  const expected={state:p.state,error:p.error};rejectPlay(Error('late play rejection'));await resuming;
  assert.deepEqual({state:p.state,error:p.error},expected);p.clear();await p.dispose();
+});
+test('a zero-width seekable range disables seeking and explains the limitation',async()=>{
+ const {p,audio}=fixture(()=>({item:item('a'),url:'https://media.xyzcdn.net/a.wav',position:0,epoch:1}));
+ audio.seekable={length:1,start:()=>0,end:()=>0};await p.play(item('a'));
+ assert.equal(p.seekable,false);assert.equal(p.seek(5),false);assert.match(p.notice,/定位/);
+ audio.seekable={length:1,start:()=>0,end:()=>120};audio.dispatchEvent(new Event('progress'));
+ assert.equal(p.seekable,true);assert.equal(p.notice,'');await p.dispose();
+});
+test('unseekable playback displays the actual time while retaining the previous checkpoint',async()=>{
+ let checkpoint=42;
+ const {p,audio}=fixture(()=>({item:item('a'),url:'https://media.xyzcdn.net/a.wav',position:checkpoint,epoch:1}),{save:({progress})=>{checkpoint=progress.position;}});
+ audio.seekable={length:1,start:()=>0,end:()=>0};await p.play(item('a'));audio.currentTime=2;audio.dispatchEvent(new Event('timeupdate'));await p.persist();
+ assert.equal(p.position,2);assert.equal(checkpoint,42);assert.match(p.notice,/原进度.*保留/);await p.dispose();
+});
+test('natural playback reaching the retained checkpoint resumes progress saving',async()=>{
+ let checkpoint=42;
+ const {p,audio}=fixture(()=>({item:item('a'),url:'https://media.xyzcdn.net/a.wav',position:checkpoint,epoch:1}),{save:({progress})=>{checkpoint=progress.position;}});
+ audio.seekable={length:1,start:()=>0,end:()=>0};await p.play(item('a'));audio.currentTime=43;audio.dispatchEvent(new Event('timeupdate'));await p.persist();
+ assert.equal(checkpoint,43);assert.equal(p.position,43);assert.doesNotMatch(p.notice,/原进度/);
+ audio.currentTime=120;audio.dispatchEvent(new Event('ended'));await p.flush();assert.equal(checkpoint,120);await p.dispose();
 });

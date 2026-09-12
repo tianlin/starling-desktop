@@ -10,11 +10,11 @@
 |---|---|
 | 根模块 go test -json -count=1 ./... | 78 个测试/子测试通过，4 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
 | 根模块 go vet ./... | 通过 |
-| frontend 中 npm test | TypeScript 编译和 25 项 Node 测试通过 |
+| frontend 中 npm test | TypeScript 编译和 28 项 Node 测试通过 |
 | desktop 模块 go test ./... / go vet ./... | 通过编译与静态检查；宿主尚无专用测试文件 |
-| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r5 | 全流程通过，输出独立 Starling-candidate-r5.exe；跳过绑定生成，未启动应用 |
+| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r6 | 全流程通过，输出独立 Starling-candidate-r6.exe；跳过绑定生成，未启动应用 |
 | 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
-| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置，14 项真实 DOM/合成音频检查通过；保留 CSP，直接连接本机合成 Go 后端 |
+| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置；14 项 DOM/WAV 检查通过，另有 6 项 MP3/M4A/AAC 的 HTTP Range/非 Range 实际 Player 检查通过；主 UI 保留 CSP 连接本机合成 Go 后端 |
 | 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
 | 依赖材料 | 实际二进制 18 个外部 Go 模块＋Go 运行时/工具链＋TypeScript 构建工具，共 20 项；递归收集 63 份许可证/声明及文件哈希，没有组件缺少声明文本，适用性仍待专业审查 |
 | 独立代码检查 | 只读审查和离线 provider/app 测试通过；非 CodeRabbit 报告，未替代实机验收 |
@@ -37,7 +37,7 @@
 
 新增回归覆盖设备 UUID 每客户端稳定且相互独立、不伪装手机、私有库末页规则、异常分页不被覆盖、嵌套错误进入诊断、错误时保留缓存、内存缓存过期和缓存文案。
 
-候选文件 `build/Starling-candidate-r5.exe` SHA-256：`803728f999b320a5138e79457a95ba5b15b5d540fab30e2972593e5b93d02638`。
+候选文件 `build/Starling-candidate-r6.exe` SHA-256：`eacf709f04a870da2935273c44351883bce5f8256c0886e6339830bf82f5580a`。
 
 本机证据位于 `build/core-tests.jsonl`、`build/vulnerabilities-after.txt`、`build/compliance/`、`docs/test-results/`（均为不提交的构建/测试产物）。不提交真实账号响应。
 
@@ -104,6 +104,18 @@
 此结果只证明这两个来源当时的匿名范围响应，不证明 AAC/MP3 解码、原生 WebView2、长时播放或所有 CDN 行为。脱敏日志位于 build/live-media-sample-1.log 与 build/live-media-sample-2.log，不提交。
 
 公开页面修复提交 `287e6401cd94588fa53b5d4c850a57017e9e3787` 的 [CI 34678959067](https://github.com/tianlin/starling-desktop/actions/runs/34678959067) 已全部通过；后续修改的远端结果另行核对。
+
+## 编码媒体与不支持定位时的行为
+
+新增约 6 秒的静音 MP3、M4A/AAC LC、AAC/ADTS 样本，共 171139 字节。样本由已有本地 soundfile 编码器和 Chrome MediaRecorder 的虚拟静音节点生成；未采集麦克风、连接扬声器或下载媒体。可选生成器和格式检查见 tests/e2e/generate_media.py；样本已入库，日常测试无须安装编码依赖。
+
+tests/e2e/media.py 在随机本地端口上服务这些样本并加载实际编译的 Player 模块。Windows Headless Chrome 152.0.7977.84 的六组测试通过：每种格式的 Range 模式均可解码、从 3 秒续播、定位回 1 秒及保存；非 Range 模式返回 200，均可从头播放及保存，但本次浏览器的 seekable 始终为零宽范围，不支持定位。
+
+该实测进一步修复零宽范围被误判为可定位的问题。界面禁用拖动/快进/后退并解释限制；未能恢复时显示实际播放时间，原续播检查点保留，自然播放追平旧位置后恢复保存，真实 ended 保存完成状态。媒体重解析保留待续播目标。非 Range 六组中的三个场景额外验证实际位置、提示、早期不覆盖及自然追平后保存。新增 3 项 Node 回归先失败后通过，全部前端 28 项通过，独立播放器复核 22 项通过。
+
+候选 r6 已完整构建、漏洞扫描通过，20 项组件/63 份声明已重新生成。媒体测试已接入 CI，其 Linux 结果以对应提交的 Actions 为准。本地机器可读结果在 docs/test-results/media.json。此证据不代替 WebView2、任意格式文件、原生设备或 2 小时连续播放验收。
+
+播放器首批修复提交 `e37cc478de8ffb2cd2407639f5fb26434bf4b93f` 的 [CI 34679456727](https://github.com/tianlin/starling-desktop/actions/runs/34679456727) 已全部通过。
 
 ## 历史合成测试
 

@@ -98,6 +98,8 @@ cd frontend && npm test   # 严格 TypeScript 编译 + Node 内置测试
 
 浏览器集成测试先执行 `python -m pip install -r tests/e2e/requirements.txt` 和 `python -m playwright install chromium`，然后在根目录运行 `python tests/e2e/run.py`。可设置 `CHROMIUM_PATH` 指向浏览器；默认使用 Playwright 安装的 Chromium。测试使用 headless、静音和独立临时配置，不操作用户浏览器；截图与结果保存在 `docs/test-results/`。本次 Windows Headless Chrome 直接连接本机合成后端，14 项通过；其中 2 项取消竞态使用 HTTP 响应拦截，仅在直连模式运行；历史受控内存测试路径可通过 `STARLING_E2E_IN_MEMORY=1` 使用。两者均**不等于原生 Wails / WebView2 实机测试**。
 
+同一环境运行 `python tests/e2e/media.py` 可验证真实 Player 对 MP3、M4A/AAC LC、AAC/ADTS 的 HTTP Range 与非 Range 行为，共 6 组。测试使用仓库内离线生成的短静音样本，无须额外安装编码器；包括不可定位提示、保存旧续播点及自然播放追平后的恢复。结果写入 `docs/test-results/media.json`，已接入 CI。这些短合成音频不替代 WebView2、真实 CDN 或长时播放验收。
+
 经明确授权后，可单独进行真实库只读检查：设置 `$env:STARLING_LIVE_LIBRARY='1'` 后运行 `go test ./internal/provider -run '^TestLiveLibraryReadOnly$' -v -count=1`，完成后移除该环境变量。只读本应用自己的受保护会话，不续期或写回凭据；输出页数和条数，不输出账号或内容。本次真实收藏/订阅分页已通过，手机端核对仍待完成。
 
 发布前检查实际候选文件：

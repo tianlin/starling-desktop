@@ -482,10 +482,12 @@ export class Application {
         if (!seek.matches(':active'))
             seek.value = String(p.position || 0);
         seek.disabled = !p.seekable;
+        document.querySelector<HTMLButtonElement>('#backward')!.disabled = !p.seekable;
+        document.querySelector<HTMLButtonElement>('#forward')!.disabled = !p.seekable;
         document.querySelector('#queue-count')!.textContent = String(this.boot?.queue.length ?? 0);
         const message = document.querySelector<HTMLElement>('#player-message')!;
-        message.textContent = p.error;
-        message.hidden = !p.error;
+        message.textContent = p.error || p.notice;
+        message.hidden = !message.textContent;
         if ('mediaSession' in navigator) {
             try {
                 navigator.mediaSession.playbackState = p.state === 'playing' ? 'playing' : 'paused';
