@@ -5,6 +5,18 @@ export interface AppFailure {
     httpStatus?: number;
     upstreamCode?: number;
 }
+export interface Comment {
+    id: string;
+    author: { id: string; nickname: string; avatar?: string };
+    text: string;
+    createdAt: string;
+    replyCount?: number;
+}
+export interface CommentPage {
+    items: Comment[];
+    cursor: string;
+    complete: boolean;
+}
 export interface Item {
     kind: 'episode' | 'podcast';
     id: string;

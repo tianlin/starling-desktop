@@ -4,6 +4,7 @@ import { Player } from './player.js';
 import { el, button, cover, empty, input, icon } from './dom.js';
 import { formatTime, formatDate, libraryStatus, canUseSpace } from './util.js';
 import { renderNotes } from './notes.js';
+import { CommentsController, renderComments } from './comments.js';
 import { showAccount, showLink, showSettings } from './settings.js';
 const titles: Record<string, string> = { home: '继续收听', subscriptions: '我的订阅', favorites: '收藏单集', bookmarks: '本地书签', queue: '稍后听', settings: '设置' };
 const navIcons: Record<string, string> = { home: '◷', subscriptions: '▤', favorites: '♡', bookmarks: '▱', queue: '☷', settings: '⚙' };
@@ -27,6 +28,7 @@ export class Application {
     private saveSettingsChain: Promise<void> = Promise.resolve();
     private lastMediaID = '';
     private libraryGeneration = 0;
+    private comments = new CommentsController(call);
     private listCancellation: Promise<void> = Promise.resolve();
     constructor() {
         this.player = new Player(document.querySelector<HTMLAudioElement>('#audio')!, call, () => this.boot?.session.epoch ?? 0, () => this.drawPlayer());
@@ -145,6 +147,7 @@ export class Application {
         const boot = await call<Bootstrap>('bootstrap');
         if (generation !== this.reloadGeneration || boot.session.epoch < (this.boot?.session.epoch ?? 0)) return;
         this.boot = boot;
+        this.comments?.setSession(boot.session);
         this.player.observeGeneration(boot.playbackGeneration ?? 0);
         this.applySettings();
         this.drawAccount();
@@ -201,6 +204,7 @@ export class Application {
         if (!this.boot)
             return;
         this.stopList();
+        this.comments.leave();
         this.route = name;
         this.routeGeneration++;
         this.list = null;
@@ -415,6 +419,7 @@ export class Application {
     }
     async details(it: Item) {
         this.stopList();
+        this.comments.leave();
         this.route = 'detail';
         const generation = ++this.routeGeneration;
         const epoch = this.boot.session.epoch;
@@ -432,6 +437,7 @@ export class Application {
     }
     showDetail(it: Item) {
         this.stopList();
+        this.comments.leave();
         this.route = 'detail';
         this.routeGeneration++;
         this.listKind = '';
@@ -451,7 +457,7 @@ export class Application {
         this.page.replaceChildren(hero);
         if (it.restricted)
             this.page.append(el('p', 'inline-warning', it.restriction || '此内容受限，首版不支持付费或私有内容。'));
-        this.page.append(el('h2', 'section-heading', '节目说明'), renderNotes(it.showNotes || it.description || '暂无说明。', seconds => {
+        const notes = renderNotes(it.showNotes || it.description || '暂无说明。', seconds => {
             if (this.player.item?.id !== it.id) {
                 this.notice('先播放当前单集，再点击时间点跳转。');
                 return;
@@ -461,7 +467,38 @@ export class Application {
                 return;
             }
             this.seekTo(seconds);
-        }, url => { void openExternal(url).catch(e => this.notice(e)); }));
+        }, url => { void openExternal(url).catch(e => this.notice(e)); });
+        if (it.kind !== 'episode') {
+            this.page.append(el('h2', 'section-heading', '节目说明'), notes);
+            return;
+        }
+        this.comments.setSession(this.boot.session);
+        this.comments.open(it.id);
+        const tabs = el('div', 'detail-tabs'); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', '单集内容');
+        const content = el('div', 'detail-tab-content'); content.setAttribute('role', 'tabpanel'); content.id = 'episode-tab-panel';
+        let selected: 'notes' | 'comments' = 'notes';
+        const draw = () => {
+            notesTab.setAttribute('aria-selected', String(selected === 'notes'));
+            commentsTab.setAttribute('aria-selected', String(selected === 'comments'));
+            notesTab.tabIndex = selected === 'notes' ? 0 : -1;
+            commentsTab.tabIndex = selected === 'comments' ? 0 : -1;
+            content.setAttribute('aria-labelledby', selected === 'notes' ? notesTab.id : commentsTab.id);
+            content.replaceChildren(selected === 'notes' ? notes : renderComments(this.comments, () => showAccount(this)));
+        };
+        const select = (tab: 'notes' | 'comments') => { selected = tab; draw(); if (tab === 'comments' && !this.comments.state.loaded) void this.comments.load(); };
+        const notesTab = button('节目说明', () => select('notes'), 'detail-tab'); notesTab.id = 'episode-notes-tab';
+        const commentsTab = button('评论', () => select('comments'), 'detail-tab'); commentsTab.id = 'episode-comments-tab';
+        for (const tab of [notesTab, commentsTab]) {
+            tab.setAttribute('role', 'tab'); tab.setAttribute('aria-controls', content.id);
+            tab.addEventListener('keydown', event => {
+                if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                event.preventDefault();
+                const next = event.key === 'Home' ? 'notes' : event.key === 'End' ? 'comments' : selected === 'notes' ? 'comments' : 'notes';
+                select(next); (next === 'notes' ? notesTab : commentsTab).focus();
+            });
+        }
+        tabs.append(notesTab, commentsTab); this.comments.onChange = draw;
+        this.page.append(tabs, content); draw();
     }
     drawPlayer() {
         const p = this.player;

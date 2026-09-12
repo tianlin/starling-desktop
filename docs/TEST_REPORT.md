@@ -2,6 +2,12 @@
 
 验证记录更新：2026-09-12。源码开发版，不是签名安装包或完成真实账号验收的正式版本。
 
+## 评论阅读增量（2026-09-12）
+
+根模块与 desktop 模块 `go test ./...` / `go vet ./...` 通过；前端 35 项 Node 测试通过。新增 `tests/e2e/comments.py` 在 Windows Headless Chrome 通过 6 组场景：访客/懒加载、纯文本、分页失败保留与去重、回复与持续播放、900×700 布局、退出清理与无未捕获异常。截图位于忽略的 `docs/test-results/comments*.png`，不是 Wails WebView2 实机证据。
+
+真实只读检查一级评论两页 15 + 1 条，两个回复线程各 1 条；仅使用本应用会话，不续期、不写回或发表，详细边界见 [COMMENTS_API.md](COMMENTS_API.md)。本节与下方历史候选测试数量分开记录。
+
 ## 当前 Windows 验证
 
 环境：Windows x64、Go 1.26.8、Node.js 24.5.0、TypeScript 5.8.3、Wails 2.11.0。根目录测试不会自动覆盖 desktop 嵌套模块。以下新结果针对工作区候选版本；没有操作桌面窗口或启动候选程序。

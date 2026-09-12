@@ -8,12 +8,27 @@ import (
 )
 
 type Fake struct {
-	SendFunc    func(context.Context, string, string) error
-	LoginFunc   func(context.Context, string, string, string) (model.Credentials, model.Identity, error)
-	MeFunc      func(context.Context, string) (model.Identity, error)
-	RefreshFunc func(context.Context, model.Credentials) (model.Credentials, error)
-	ListFunc    func(context.Context, string, string, string, string) (model.Page, error)
-	DetailFunc  func(context.Context, string, string, string) (model.Item, error)
+	SendFunc          func(context.Context, string, string) error
+	LoginFunc         func(context.Context, string, string, string) (model.Credentials, model.Identity, error)
+	MeFunc            func(context.Context, string) (model.Identity, error)
+	RefreshFunc       func(context.Context, model.Credentials) (model.Credentials, error)
+	ListFunc          func(context.Context, string, string, string, string) (model.Page, error)
+	DetailFunc        func(context.Context, string, string, string) (model.Item, error)
+	CommentsFunc      func(context.Context, string, string, string) (model.CommentPage, error)
+	CommentThreadFunc func(context.Context, string, string, string, string) (model.CommentPage, error)
+}
+
+func (f *Fake) Comments(ctx context.Context, token, eid, cursor string) (model.CommentPage, error) {
+	if f.CommentsFunc != nil {
+		return f.CommentsFunc(ctx, token, eid, cursor)
+	}
+	return model.CommentPage{Items: []model.Comment{}, Complete: true}, nil
+}
+func (f *Fake) CommentThread(ctx context.Context, token, eid, cid, cursor string) (model.CommentPage, error) {
+	if f.CommentThreadFunc != nil {
+		return f.CommentThreadFunc(ctx, token, eid, cid, cursor)
+	}
+	return model.CommentPage{Items: []model.Comment{}, Complete: true}, nil
 }
 
 func (f *Fake) SendCode(c context.Context, p, a string) error {

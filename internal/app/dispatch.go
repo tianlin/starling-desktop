@@ -57,7 +57,7 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 			safeAction = "unknown"
 		}
 		switch action {
-		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics":
+		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread":
 		default:
 			safeAction = "unknown"
 		}
@@ -76,6 +76,20 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 }
 func (s *Service) dispatch(ctx context.Context, action, payload string) (any, error) {
 	switch action {
+	case "comments.list", "comments.thread":
+		var v struct {
+			Epoch     uint64 `json:"epoch"`
+			EpisodeID string `json:"episodeId"`
+			CommentID string `json:"commentId"`
+			Cursor    string `json:"cursor"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		if (action == "comments.thread" && v.CommentID == "") || (action == "comments.list" && v.CommentID != "") {
+			return nil, model.Err("INVALID_REQUEST", "评论请求类型与参数不匹配。")
+		}
+		return s.Comments(ctx, v.Epoch, v.EpisodeID, v.CommentID, v.Cursor)
 	case "account.qrStart":
 		if e := s.checkExperimental(); e != nil {
 			return nil, e

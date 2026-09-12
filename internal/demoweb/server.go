@@ -47,6 +47,7 @@ func New(dir, host string) (*Server, error) {
 		return nil, e
 	}
 	f := &testkit.Fake{}
+	installCommentFixtures(f)
 	f.ListFunc = func(ctx context.Context, token, kind, pid, cursor string) (model.Page, error) {
 		var items []model.Item
 		if kind == "subscriptions" {

@@ -233,9 +233,14 @@ func (m *Manager) Restore(ctx context.Context) error {
 	return m.establish(s.Epoch, combined, c, id, true)
 }
 func (m *Manager) Do(ctx context.Context, fn func(context.Context, string) error) (Snapshot, error) {
-	s := m.Snapshot()
-	if s.State != "connected" {
-		return s, model.Err("UNAUTHORIZED", "账号未连接或需要重新登录。")
+	return m.DoAt(ctx, m.View().Epoch, fn)
+}
+
+// DoAt binds the initial request as well as any refresh replay to the caller's epoch.
+func (m *Manager) DoAt(ctx context.Context, epoch uint64, fn func(context.Context, string) error) (Snapshot, error) {
+	s, snapshotErr := m.connectedSnapshot(epoch)
+	if snapshotErr != nil {
+		return s, snapshotErr
 	}
 	combined, done := join(ctx, s.context)
 	defer done()
