@@ -102,4 +102,21 @@ node scripts/dependency-report.mjs build/Starling-candidate-020.exe
 - 六组 Chromium 合成浏览器回归共 57 项通过（run 16、comments 16、updates 7、discovery 8、media 6、media_failures 4）。更新流用例中一条已被 0.2.0 后续提交移除的技术提示断言已同步；未知结束和确认空列表仍分别验证。
 - Windows 候选 Starling-candidate-030.exe 构建及 0.3.0 版本资源检查通过，未替换或启动用户运行中的应用；SHA-256 位于 build/SHA256SUMS-candidate-030.txt。实际 EXE 扫描无漏洞命中，依赖材料 20 个组件、63 份许可文本。
 - Windows 安装/卸载隔离回归 7 项、许可收集器 2 项、actionlint 1.7.12 均通过。
-- macOS 本机不可执行：必须继续读取两个原生 CI 作业的编译、钥匙串和启动结果。最低系统版本、实际出声与用户账号流程待实机验收。
+- WSL Ubuntu 24.04 根模块 `go test -race ./...` / `go vet ./...` 通过；macOS shell 脚本语法和产物校验 Python 脚本编译检查通过。
+- macOS 原生验证通过下述 CI 完成；最低系统版本、实际出声与用户账号流程待实机验收。
+
+### 0.3.0 双架构 CI 结果
+
+实现提交：`356b5a601af1f0b95426871c85fbde093b24a175`。2026-09-13 核对 [CI run 34717600249](https://github.com/tianlin/starling-desktop/actions/runs/34717600249) 已完成且结论为 success，五个作业全部通过。后续文档补充不改变此实现提交的源码。
+
+| 作业 | 已通过范围 |
+| --- | --- |
+| macOS 15 arm64 | 根模块 race/vet、宿主 test/vet、隔离钥匙串测试、前端测试、Wails 应用构建、ad-hoc 签名完整性、架构/最低目标/动态库检查、漏洞扫描、依赖材料、DMG 打包与挂载、隔离访客前端初始化和实际退出保存握手 |
+| macOS 15 Intel amd64 | 与 arm64 相同范围，在 Intel runner 原生执行 |
+| Windows candidate | 测试、构建、版本资源、实际 EXE 漏洞扫描和依赖材料 |
+| Windows installation | 隔离安装/卸载检查 |
+| Linux core | 核心 race/vet、前端与合成浏览器回归 |
+
+候选下载（GitHub Actions artifact，可能需要登录 GitHub）：[Apple Silicon](https://github.com/tianlin/starling-desktop/actions/runs/34717600249/artifacts/10305171941)、[Intel](https://github.com/tianlin/starling-desktop/actions/runs/34717600249/artifacts/10304933187)。每个压缩包内包含对应 DMG、SHA256SUMS.txt、构建环境、校验/启动日志和依赖材料。制品有保留期限，并非永久 Release 附件。
+
+上述启动冒烟不播放真实节目，不登录真实账号；拒绝把六秒超时退出视为正常保存握手。macOS 14 实机、Gatekeeper 首次下载提示、实际音频、Dock/菜单栏交互、系统睡眠和长时播放仍需用户按 MACOS.md 验收。

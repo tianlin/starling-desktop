@@ -6,7 +6,7 @@
 
 根 Go 模块包含业务、平台、会话、安全、存储与原生集成；`desktop/` 是单独依赖 Wails 的 Go 模块。根目录测试不会覆盖宿主，构建脚本分别检查，临时双模块 workspace 负责依赖校验。前端为原生 DOM TypeScript，编译资产嵌入宿主。独立 `cmd/demo` 使用合成 Provider 和临时数据库，生产入口不引用演示。
 
-Windows 使用 System32 的 `winsqlite3.dll`，不要求 CGo；Linux 自动化通过 CGo 调用系统 SQLite。两条原生路径分别验证。Windows 分发采用便携程序与当前用户安装脚本，尚无代码签名和自动更新。
+Windows 使用 System32 的 `winsqlite3.dll`，不要求 CGo；Linux 自动化和 macOS 通过 CGo 调用系统 SQLite。原生路径分别验证。Windows 分发采用便携程序与当前用户安装脚本，尚无代码签名和自动更新。
 
 ## 认证、会话与写操作
 

@@ -7,7 +7,7 @@
 - 官方公开认证页面 `https://accounts.xiaoyuzhoufm.com/` 的前端资源确认了二维码创建、轮询状态和失效响应。使用 `https://web-api.xiaoyuzhoufm.com/v1/auth/qrcode/create` 和 `/v1/auth/qrcode/login`；当前 clientId 为 `podcaster-platform`，不宣称是独立获批的 Starling OAuth 客户端。
 - 二维码在本地编码为像素矩阵，由 canvas 显示，不调用第三方二维码图片服务。
 - 轮询间隔 1.5 秒；等待、已扫描、已确认分别处理；本地最多等待 3 分钟。CONFIRMED 和 USED 均按官方前端的完成状态处理，但必须取得完整凭据；HTTP 401/code 21 才按二维码失效处理。请求失败时停止，不无限重试。
-- 确认后的访问与刷新令牌仅留在 Go 后端。先读取网页身份，再读取听众身份；UID 一致后才建立会话。可选使用原有 Windows DPAPI 保存；否则仅本次会话。
+- 确认后的访问与刷新令牌仅留在 Go 后端。先读取网页身份，再读取听众身份；UID 一致后才建立会话。可选在 Windows 使用 DPAPI、macOS 使用本机钥匙串保存；否则仅本次会话。保存失败会明确提示，并保留临时连接。
 - 关闭窗口会取消该二维码；旧二维码不能覆盖新会话。取消和失败后刷新前端会话版本。
 - 原有短信路径保留，但未接入官方网页的人机验证流程。
 
