@@ -20,6 +20,7 @@ export class Player {
     onEnded = () => { };
     serial = 0;
     requestID = '';
+    requestGeneration = 0;
     itemEpoch = 0;
     resolved = false;
     savedPosition = 0;
@@ -60,7 +61,7 @@ export class Player {
             }
         });
         this.listen('pause', () => {
-            if (!this.suppress && this.resolved && this.state !== 'ended') {
+            if (!this.suppress && this.resolved && this.state !== 'ended' && this.state !== 'error') {
                 this.state = 'paused';
                 this.save(false);
                 this.notify();
@@ -122,6 +123,10 @@ export class Player {
         if (!this.disposed)
             this.changed();
     }
+    observeGeneration(generation) {
+        if (Number.isSafeInteger(generation) && generation > this.serial)
+            this.serial = generation;
+    }
     get position() { return this.resolved ? this.audio.currentTime : this.savedPosition; }
     get duration() { return this.resolved && Number.isFinite(this.audio.duration) ? this.audio.duration : this.savedDuration; }
     get seekable() {
@@ -139,12 +144,13 @@ export class Player {
         if (this.disposed)
             return false;
         this.save(this.state === 'ended');
-        const previous = this.requestID, previousEpoch = this.itemEpoch;
+        const previous = this.requestID, previousEpoch = this.itemEpoch, previousGeneration = this.requestGeneration;
         const seq = ++this.serial;
+        this.requestGeneration = seq;
         this.requestID = `play-${Date.now()}-${seq}`;
         const requestID = this.requestID;
         if (previous)
-            void this.api('playback.cancel', { epoch: previousEpoch, requestId: previous }).catch(() => { });
+            void this.api('playback.cancel', { epoch: previousEpoch, requestId: previous, generation: previousGeneration }).catch(() => { });
         this.suppress = true;
         this.audio.pause();
         this.audio.removeAttribute('src');
@@ -166,7 +172,7 @@ export class Player {
             await this.flush();
             if (seq !== this.serial || epoch !== this.epoch())
                 return false;
-            const result = await this.api('playback.resolve', { epoch, id: it.id, requestId: requestID });
+            const result = await this.api('playback.resolve', { epoch, id: it.id, requestId: requestID, generation: seq });
             if (seq !== this.serial || epoch !== this.epoch() || this.disposed)
                 return false;
             this.item = result.item;
@@ -200,9 +206,9 @@ export class Player {
     pause() {
         ++this.serial;
         if (this.requestID)
-            void this.api('playback.cancel', { epoch: this.itemEpoch, requestId: this.requestID }).catch(() => { });
+            void this.api('playback.cancel', { epoch: this.itemEpoch, requestId: this.requestID, generation: this.requestGeneration }).catch(() => { });
         this.audio.pause();
-        if (this.item && this.state !== 'ended')
+        if (this.item && this.state !== 'ended' && this.state !== 'error')
             this.state = 'paused';
         this.save(this.state === 'ended');
         this.notify();
@@ -280,8 +286,9 @@ export class Player {
     clear() {
         ++this.serial;
         if (this.requestID)
-            void this.api('playback.cancel', { epoch: this.itemEpoch, requestId: this.requestID }).catch(() => { });
+            void this.api('playback.cancel', { epoch: this.itemEpoch, requestId: this.requestID, generation: this.requestGeneration }).catch(() => { });
         this.requestID = '';
+        this.requestGeneration = 0;
         this.suppress = true;
         this.resolved = false;
         this.audio.pause();

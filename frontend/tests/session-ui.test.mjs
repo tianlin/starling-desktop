@@ -7,16 +7,18 @@ test('late bootstrap cannot replace a newer account or redraw stale state', asyn
     globalThis.window = { go: { main: { App: { Call: () => new Promise(resolve => pending.push(resolve)) } } } };
     const app = Object.assign(Object.create(Application.prototype), {
         boot: { session: { epoch: 1, state: 'guest' } }, reloadGeneration: 0,
+        player: { observeGeneration(value) { this.generation = value; } },
         applySettings() {}, drawAccount() { this.drawn = this.boot.session.state; },
     });
     const old = app.reload();
     const fresh = app.reload();
-    pending[1](JSON.stringify({ ok: true, data: { session: { epoch: 3, state: 'connected' } } }));
+    pending[1](JSON.stringify({ ok: true, data: { session: { epoch: 3, state: 'connected' }, playbackGeneration: 41 } }));
     await fresh;
     pending[0](JSON.stringify({ ok: true, data: { session: { epoch: 1, state: 'guest' } } }));
     await old;
     assert.equal(app.boot.session.epoch, 3);
     assert.equal(app.drawn, 'connected');
+    assert.equal(app.player.generation, 41);
     delete globalThis.window;
 });
 
@@ -39,7 +41,7 @@ test('startup restore bootstrap cannot overwrite an interactive login', async ()
         return JSON.stringify({ ok: true, data });
     } } } } };
     const app = Object.assign(Object.create(Application.prototype), {
-        reloadGeneration: 0, player: {}, wire() {}, applySettings() {},
+        reloadGeneration: 0, player: { observeGeneration() {} }, wire() {}, applySettings() {},
         drawAccount() { this.drawn = this.boot.session.state; },
         nativeEvents() {}, async navigate() {}, notice(e) { throw e; },
     });

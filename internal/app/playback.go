@@ -135,15 +135,70 @@ func (s *Service) OpenLink(ctx context.Context, epoch uint64, text string) (mode
 	return s.Detail(ctx, epoch, share.Kind, share.ID)
 }
 func (s *Service) Resolve(ctx context.Context, epoch uint64, id, requestID string) (model.Playback, error) {
-	var out model.Playback
+	return s.resolve(ctx, epoch, 0, id, requestID, false)
+}
+
+// ResolveAt accepts only a strictly newer selection within the session epoch.
+// Wails dispatches bridge calls concurrently, so arrival order is not intent order.
+func (s *Service) ResolveAt(ctx context.Context, epoch, generation uint64, id, requestID string) (model.Playback, error) {
+	return s.resolve(ctx, epoch, generation, id, requestID, true)
+}
+
+const maxPlaybackGeneration uint64 = 1<<53 - 1 // Exact positive integers in the JS bridge.
+
+func validatePlaybackRequest(requestID string, generation uint64, ordered bool) error {
 	if requestID == "" || len(requestID) > 128 || strings.ContainsAny(requestID, "\r\n\x00") {
-		return out, model.Err("INVALID_REQUEST", "播放请求标识无效。")
+		return model.Err("INVALID_REQUEST", "播放请求标识无效。")
+	}
+	if ordered && (generation == 0 || generation > maxPlaybackGeneration) {
+		return model.Err("INVALID_REQUEST", "播放请求代次无效。")
+	}
+	return nil
+}
+
+// Caller holds s.mu inside session.Commit, preserving the session -> service lock order.
+func (s *Service) resetPlaybackEpochLocked(epoch uint64) {
+	if s.playEpoch == epoch {
+		return
+	}
+	if s.playCancel != nil {
+		s.playCancel()
+	}
+	s.playEpoch = epoch
+	s.playGeneration = 0
+	s.playOrdered = false
+	s.playID = ""
+	s.playCancel = nil
+}
+
+func (s *Service) resolve(ctx context.Context, epoch, generation uint64, id, requestID string, ordered bool) (model.Playback, error) {
+	var out model.Playback
+	if e := validatePlaybackRequest(requestID, generation, ordered); e != nil {
+		return out, e
+	}
+	if !security.ValidID(id) {
+		return out, model.Err("INVALID_ID", "单集 ID 无效。")
 	}
 	requestCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	e := s.session.Commit(epoch, func(string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		s.resetPlaybackEpochLocked(epoch)
+		if requestCtx.Err() != nil {
+			return model.Err("CANCELLED", "播放请求已取消。")
+		}
+		if !ordered {
+			// Once this epoch uses client ordering, late legacy calls cannot bypass it.
+			if s.playOrdered || s.playGeneration == maxPlaybackGeneration {
+				return model.Err("INVALID_REQUEST", "请刷新界面后使用带代次的播放请求。")
+			}
+			generation = s.playGeneration + 1
+		} else if generation <= s.playGeneration {
+			return model.Err("CANCELLED", "播放请求已被取消或更新的选择替代。")
+		}
+		s.playGeneration = generation
+		s.playOrdered = ordered
 		if s.playCancel != nil {
 			s.playCancel()
 		}
@@ -156,6 +211,9 @@ func (s *Service) Resolve(ctx context.Context, epoch uint64, id, requestID strin
 	}
 	it, e := s.Detail(requestCtx, epoch, "episode", id)
 	if e != nil {
+		if requestCtx.Err() == context.Canceled && !model.IsCode(e, "STALE_SESSION") {
+			return out, model.Err("CANCELLED", "播放请求已取消。")
+		}
 		return out, e
 	}
 	if it.Restricted {
@@ -168,7 +226,7 @@ func (s *Service) Resolve(ctx context.Context, epoch uint64, id, requestID strin
 	e = s.session.Commit(epoch, func(scope string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.playID != requestID || requestCtx.Err() != nil {
+		if s.playID != requestID || s.playGeneration != generation || requestCtx.Err() != nil {
 			return model.Err("CANCELLED", "播放请求已取消。")
 		}
 		var p model.Progress
@@ -183,15 +241,41 @@ func (s *Service) Resolve(ctx context.Context, epoch uint64, id, requestID strin
 	return out, e
 }
 func (s *Service) CancelResolve(epoch uint64, requestID string) error {
+	return s.cancelResolve(epoch, 0, requestID, false)
+}
+
+// CancelResolveAt also fences a queued request that has not entered ResolveAt yet.
+func (s *Service) CancelResolveAt(epoch, generation uint64, requestID string) error {
+	return s.cancelResolve(epoch, generation, requestID, true)
+}
+
+func (s *Service) cancelResolve(epoch, generation uint64, requestID string, ordered bool) error {
+	if e := validatePlaybackRequest(requestID, generation, ordered); e != nil {
+		return e
+	}
 	return s.session.Commit(epoch, func(string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		if s.playID == requestID {
-			if s.playCancel != nil {
-				s.playCancel()
+		s.resetPlaybackEpochLocked(epoch)
+		if !ordered {
+			if s.playOrdered {
+				return model.Err("INVALID_REQUEST", "请刷新界面后使用带代次的播放请求。")
 			}
-			s.playID = ""
+			if s.playID != requestID {
+				return nil
+			}
+		} else {
+			if generation < s.playGeneration || (generation == s.playGeneration && s.playID != requestID) {
+				return nil
+			}
+			s.playGeneration = generation
+			s.playOrdered = true
 		}
+		if s.playCancel != nil {
+			s.playCancel()
+		}
+		s.playID = ""
+		s.playCancel = nil
 		return nil
 	})
 }

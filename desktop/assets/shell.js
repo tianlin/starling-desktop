@@ -82,13 +82,13 @@ export class Application {
         document.querySelector('#account-button').addEventListener('click', () => showAccount(this));
         document.querySelector('#top-account').addEventListener('click', () => showAccount(this));
         document.querySelector('#toggle-play').addEventListener('click', () => { void this.player.toggle(); });
-        document.querySelector('#backward').addEventListener('click', () => this.player.jump(-15));
-        document.querySelector('#forward').addEventListener('click', () => this.player.jump(30));
+        document.querySelector('#backward').addEventListener('click', () => this.seekTo(this.player.position - 15));
+        document.querySelector('#forward').addEventListener('click', () => this.seekTo(this.player.position + 30));
         document.querySelector('#player-title').addEventListener('click', () => {
             if (this.player.item)
                 void this.details(this.player.item);
         });
-        document.querySelector('#seek').addEventListener('input', e => this.player.seek(Number(e.target.value)));
+        document.querySelector('#seek').addEventListener('input', e => this.seekTo(Number(e.target.value)));
         document.querySelector('#volume').addEventListener('input', e => {
             if (!this.boot)
                 return;
@@ -131,12 +131,18 @@ export class Application {
                 });
                 set('pause', () => this.player.pause());
             }
-            set('seekbackward', d => this.player.jump(-(d.seekOffset ?? 15)));
-            set('seekforward', d => this.player.jump(d.seekOffset ?? 30));
+            set('seekbackward', d => this.seekTo(this.player.position - (d.seekOffset ?? 15)));
+            set('seekforward', d => this.seekTo(this.player.position + (d.seekOffset ?? 30)));
             set('seekto', d => {
                 if (d.seekTime !== undefined)
-                    this.player.seek(d.seekTime);
+                    this.seekTo(d.seekTime);
             });
+        }
+    }
+    seekTo(seconds) {
+        if (!this.player.seek(seconds)) {
+            document.querySelector('#seek').value = String(this.player.position || 0);
+            this.notice('当前时间点暂不可定位，请等待缓冲后重试。');
         }
     }
     applySettings() { this.player.audio.volume = this.boot.settings.volume; this.player.audio.playbackRate = this.boot.settings.rate; document.querySelector('#volume').value = String(this.boot.settings.volume); document.querySelector('#rate').value = String(this.boot.settings.rate); }
@@ -152,6 +158,7 @@ export class Application {
         if (generation !== this.reloadGeneration || boot.session.epoch < (this.boot?.session.epoch ?? 0))
             return;
         this.boot = boot;
+        this.player.observeGeneration(boot.playbackGeneration ?? 0);
         this.applySettings();
         this.drawAccount();
     }
@@ -497,7 +504,7 @@ export class Application {
                 this.notice('当前时间点不可定位。');
                 return;
             }
-            this.player.seek(seconds);
+            this.seekTo(seconds);
         }, url => { void openExternal(url).catch(e => this.notice(e)); }));
     }
     drawPlayer() {

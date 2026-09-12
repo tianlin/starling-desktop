@@ -202,21 +202,29 @@ func (s *Service) dispatch(ctx context.Context, action, payload string) (any, er
 		return s.OpenLink(ctx, v.Epoch, v.Text)
 	case "playback.resolve":
 		var v struct {
-			Epoch     uint64 `json:"epoch"`
-			ID        string `json:"id"`
-			RequestID string `json:"requestId"`
+			Epoch      uint64  `json:"epoch"`
+			Generation *uint64 `json:"generation"`
+			ID         string  `json:"id"`
+			RequestID  string  `json:"requestId"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
+		}
+		if v.Generation != nil {
+			return s.ResolveAt(ctx, v.Epoch, *v.Generation, v.ID, v.RequestID)
 		}
 		return s.Resolve(ctx, v.Epoch, v.ID, v.RequestID)
 	case "playback.cancel":
 		var v struct {
-			Epoch     uint64 `json:"epoch"`
-			RequestID string `json:"requestId"`
+			Epoch      uint64  `json:"epoch"`
+			Generation *uint64 `json:"generation"`
+			RequestID  string  `json:"requestId"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
+		}
+		if v.Generation != nil {
+			return nil, s.CancelResolveAt(v.Epoch, *v.Generation, v.RequestID)
 		}
 		return nil, s.CancelResolve(v.Epoch, v.RequestID)
 	case "progress.save":

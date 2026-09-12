@@ -90,6 +90,14 @@ try:
         page.locator('[data-route="home"]').click()
         expect(page.locator('#page .history-progress').first).to_contain_text('0:42')
         results.append('PASS: local progress persisted and presented')
+        if os.environ.get('STARLING_E2E_IN_MEMORY') != '1':
+            page.reload()
+            expect(page.locator('#position')).to_have_text('0:42')
+            assert page.locator('#audio').evaluate('(a)=>a.paused')
+            page.locator('#toggle-play').click()
+            page.wait_for_function("() => document.querySelector('#audio').currentTime > 42 && !document.querySelector('#audio').paused")
+            page.locator('#toggle-play').click()
+            results.append('PASS: a reloaded UI seeds playback ordering and resumes the saved checkpoint')
         # Hold the old login before dispatch, close the dialog, and then deliver it
         # after a newer login succeeds. This must not close or log out the new UI.
         if os.environ.get('STARLING_E2E_IN_MEMORY') != '1':
@@ -150,6 +158,29 @@ try:
         results.append('PASS: Show Notes sanitization and timestamp seeking')
         page.screenshot(path=str(OUT/'detail.png'),full_page=False)
         page.locator('#toggle-play').click()
+        # Isolate the UI's response to a rejected seek. The real encoded-media
+        # suite separately validates the browser's native seekable behavior.
+        page.locator('#audio').evaluate('''a => {
+            a.currentTime = 45;
+            Object.defineProperty(a, 'seekable', {configurable:true,
+                value:{length:1,start:()=>0,end:()=>10}});
+        }''')
+        page.locator('#seek').focus()
+        page.keyboard.press('End')
+        expect(page.locator('#notification')).to_contain_text('当前时间点暂不可定位')
+        expect(page.locator('#seek')).to_have_value('45')
+        assert page.locator('#audio').evaluate('(a)=>a.currentTime') == 45
+        page.locator('#notification').get_by_role('button',name='关闭',exact=True).click()
+        page.locator('#forward').click()
+        expect(page.locator('#notification')).to_be_visible()
+        expect(page.locator('#notification')).to_contain_text('当前时间点暂不可定位')
+        page.locator('#notification').get_by_role('button',name='关闭',exact=True).click()
+        page.get_by_role('button',name='00:45',exact=True).click()
+        expect(page.locator('#notification')).to_be_visible()
+        expect(page.locator('#notification')).to_contain_text('当前时间点暂不可定位')
+        assert page.locator('#audio').evaluate('(a)=>a.currentTime') == 45
+        page.locator('#audio').evaluate('(a)=>delete a.seekable')
+        results.append('PASS: rejected seek resets the UI control and explains the unavailable target')
         page.locator('#open-link').click()
         page.get_by_label('节目或单集的完整链接').fill('https://www.xiaoyuzhoufm.com.evil.invalid/episode/64db2d493fa4090b744c3100')
         page.get_by_role('button',name='打开内容',exact=True).click()

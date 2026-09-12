@@ -36,6 +36,8 @@ jobs:
         run: python tests/e2e/run.py
       - name: Verify encoded media and Range fallback with the production Player
         run: python tests/e2e/media.py
+      - name: Verify real media errors and bounded URL refresh
+        run: python tests/e2e/media_failures.py
       - name: Upload synthetic browser evidence
         if: always()
         uses: actions/upload-artifact@v4

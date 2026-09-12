@@ -12,7 +12,7 @@
 | FR-06 分页与同步完整性 | provider/page.go、app/library.go | 私有库特定末页规则、去重、异常分页、错误保留完整缓存、缓存过期回归通过；其他端点仍严格处理未知结束 |
 | FR-07 公开链接与详情 | security/urls.go、provider/public.go、notes.ts | 域名与 ID、公开 JSON 解析、HTML 清洗、时间点测试；已修复公开节目嵌套 episodes 结构；两个真实匿名样本通过单集/节目详情与 1/15 条预览检查，媒体未播放 |
 | FR-08 基础播放 | player.ts、shell.ts | 合成 WAV 与 MP3/M4A/AAC 的 Chrome 实际播放、Range 续播/定位及非 Range 降级通过；不可定位时禁用操作并说明；WebView2 常见媒体格式仍待测 |
-| FR-09 链接、鉴权与重试 | provider/client.go、app/playback.go、player.ts | 白名单、不传令牌、受限内容拒绝、一次媒体重解析；两个匿名真实媒体源的四次 206 Range 响应匹配；旧恢复播放拒绝不会污染新选择；真实 WebView2 播放仍待测 |
+| FR-09 链接、鉴权与重试 | provider/client.go、app/playback.go、player.ts | 两个匿名真实源的四次 206 匹配；四组受控 HTTP 403 验证一次重解析、失败停止和暂停/切歌；前后端代次水位保护乱序及排队取消，失败后暂停仍可手动重试；真实账号续期/WebView2 待测 |
 | FR-10 稍后听与恢复 | app/playback.go、player.ts、shell.ts | 队列去重 / 排序、成功播放后出队、启动暂停；进程强退与真实错误场景待测 |
 | FR-11 本机续播 | store、app/playback.go、player.ts | 保存、读取、epoch 拒绝；部分缓冲和赋值失败保留续播目标、禁止早期进度覆盖、手动定位取代目标、写盘恢复与媒体错误隔离均通过回归；桌面断电场景待测 |
 | FR-12 后台与系统控制 | internal/desktop、desktop/main.go | Windows 原生 ABI 测试通过；托盘、媒体键、睡眠/设备切换仍待完整实机验收 |

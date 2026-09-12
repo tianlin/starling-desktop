@@ -139,3 +139,20 @@ test('natural playback reaching the retained checkpoint resumes progress saving'
  assert.equal(checkpoint,43);assert.equal(p.position,43);assert.doesNotMatch(p.notice,/原进度/);
  audio.currentTime=120;audio.dispatchEvent(new Event('ended'));await p.flush();assert.equal(checkpoint,120);await p.dispose();
 });
+test('playback requests carry increasing generations seeded from the backend',async()=>{
+ const {p,calls}=fixture(({id})=>({item:item(id),url:'https://media.xyzcdn.net/a.wav',position:0,epoch:1}));
+ p.observeGeneration(41);await p.play(item('a'));
+ const first=calls.find(c=>c.action==='playback.resolve').p;assert.equal(first.generation,42);
+ p.pause();const cancelled=calls.find(c=>c.action==='playback.cancel').p;
+ assert.equal(cancelled.generation,first.generation);assert.equal(cancelled.requestId,first.requestId);
+ p.observeGeneration(1);await p.play(item('b'));
+ const latest=calls.filter(c=>c.action==='playback.resolve').at(-1).p;
+ assert.ok(latest.generation>first.generation);assert.notEqual(latest.requestId,first.requestId);await p.dispose();
+});
+test('pausing after a media failure preserves manual retry through a new resolution',async()=>{
+ const {p,audio,calls}=fixture(({id})=>({item:item(id),url:'https://media.xyzcdn.net/a.wav',position:0,epoch:1}));
+ const normalPlay=audio.play.bind(audio);audio.play=async()=>{throw Error('expired media');};
+ assert.equal(await p.play(item('a')),false);assert.equal(p.state,'error');p.pause();
+ assert.equal(p.state,'error');audio.play=normalPlay;await p.toggle();
+ assert.equal(calls.filter(c=>c.action==='playback.resolve').length,2);assert.equal(p.state,'playing');await p.dispose();
+});

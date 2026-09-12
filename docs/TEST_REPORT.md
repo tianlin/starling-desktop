@@ -8,13 +8,13 @@
 
 | 检查 | 结果与范围 |
 |---|---|
-| 根模块 go test -json -count=1 ./... | 78 个测试/子测试通过，4 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
+| 根模块 go test -json -count=1 ./... | 87 个测试/子测试通过，4 个显式联网测试默认跳过；包含当前用户 DPAPI 和 Win32 ABI |
 | 根模块 go vet ./... | 通过 |
-| frontend 中 npm test | TypeScript 编译和 28 项 Node 测试通过 |
+| frontend 中 npm test | TypeScript 编译和 30 项 Node 测试通过 |
 | desktop 模块 go test ./... / go vet ./... | 通过编译与静态检查；宿主尚无专用测试文件 |
-| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r6 | 全流程通过，输出独立 Starling-candidate-r6.exe；跳过绑定生成，未启动应用 |
+| scripts/build-windows.ps1 -Candidate -CandidateName Starling-candidate-r7 | 全流程通过，输出独立 Starling-candidate-r7.exe；跳过绑定生成，未启动应用 |
 | 依赖校验 | 临时 Go workspace 将两个本地模块都作为 main，go mod download / verify 通过；不忽略校验错误 |
-| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置；14 项 DOM/WAV 检查通过，另有 6 项 MP3/M4A/AAC 的 HTTP Range/非 Range 实际 Player 检查通过；主 UI 保留 CSP 连接本机合成 Go 后端 |
+| 浏览器回归 | Windows Headless Chrome，静音、独立临时配置；16 项 DOM/WAV、6 项编码媒体 Range/非 Range、4 项真实媒体错误/重解析检查通过；主 UI 保留 CSP 连接本机合成 Go 后端 |
 | 实际二进制漏洞扫描 | govulncheck v1.8.0 -mode=binary：No vulnerabilities found；只代表本次漏洞库和候选二进制 |
 | 依赖材料 | 实际二进制 18 个外部 Go 模块＋Go 运行时/工具链＋TypeScript 构建工具，共 20 项；递归收集 63 份许可证/声明及文件哈希，没有组件缺少声明文本，适用性仍待专业审查 |
 | 独立代码检查 | 只读审查和离线 provider/app 测试通过；非 CodeRabbit 报告，未替代实机验收 |
@@ -37,7 +37,7 @@
 
 新增回归覆盖设备 UUID 每客户端稳定且相互独立、不伪装手机、私有库末页规则、异常分页不被覆盖、嵌套错误进入诊断、错误时保留缓存、内存缓存过期和缓存文案。
 
-候选文件 `build/Starling-candidate-r6.exe` SHA-256：`eacf709f04a870da2935273c44351883bce5f8256c0886e6339830bf82f5580a`。
+候选文件 `build/Starling-candidate-r7.exe` SHA-256：`077276d2b8de112bd10c9dbaf67b375f34de0d55f8ab416fa0f78b511e6018e7`。
 
 本机证据位于 `build/core-tests.jsonl`、`build/vulnerabilities-after.txt`、`build/compliance/`、`docs/test-results/`（均为不提交的构建/测试产物）。不提交真实账号响应。
 
@@ -116,6 +116,18 @@ tests/e2e/media.py 在随机本地端口上服务这些样本并加载实际编�
 候选 r6 已完整构建、漏洞扫描通过，20 项组件/63 份声明已重新生成。媒体测试已接入 CI，其 Linux 结果以对应提交的 Actions 为准。本地机器可读结果在 docs/test-results/media.json。此证据不代替 WebView2、任意格式文件、原生设备或 2 小时连续播放验收。
 
 播放器首批修复提交 `e37cc478de8ffb2cd2407639f5fb26434bf4b93f` 的 [CI 34679456727](https://github.com/tianlin/starling-desktop/actions/runs/34679456727) 已全部通过。
+
+## 媒体地址失效、定位反馈与播放请求乱序
+
+tests/e2e/media_failures.py 使用本机随机端口和受控 403 响应，直接触发浏览器真实 audio error；不伪造媒体事件或替换音频元素方法。四项检查覆盖首次失效后仅重解析一次并保留 3 秒续播点、第二个地址也失败时停止、重解析等待期间暂停、等待期间切歌。首次运行 3 项通过，二次失效场景复现迟到 pause 事件把 error 改为 paused；修复事件监听后四项通过。显式 pause() 同样保留错误状态，随后手动播放会重新解析地址，此相邻路径已通过先红后绿的 Node 回归。
+
+主界面新增一项受控部分定位能力测试，复现拖动失败后滑块停留在虚假位置且没有说明。滑块、前进/后退、Media Session 和 Show Notes 入口现统一处理 seek 失败：恢复实际位置并提示暂不可定位。此 UI 测试只替换 seekable 能力边界；真实编码媒体套件仍直接使用浏览器原生行为，两类证据分开。
+
+另复现 Wails 并发分派下的旧解析取消新解析：旧请求被取消但尚未进入后端，后到的旧 Resolve 仍可取消正在解析的新单集。现由前端发送播放代次，后端按账号 epoch 记录水位，在取消当前解析前拒绝旧/重复代次；取消也能阻止尚未开始的请求，旧取消不影响新选择。同代次取消匹配 requestId，进入有序协议后拒绝缺代次旧调用绕过保护。Bootstrap 返回当前水位，前端只向前更新；页面重载后从保存位置播放的真实 DOM/Go 后端回归通过。
+
+新增 6 项 Go 顶层测试及 3 个交错子例，覆盖取消/新旧解析的到达顺序、重复和无效代次、旧入口、账号隔离及水位；先失败后通过。当前为 87 项 Go、30 项 Node、16＋6＋4 项浏览器检查通过。r7 完整候选构建及漏洞扫描通过，20 项组件/63 份声明已重新生成。没有启动候选、读取真实账号或操作桌面；账号 API 的 403/续期和原生 WebView2 仍须另行验收。
+
+提交 `b33e8f755ab8f28f289ad7c3f672a635710b2bfb` 的 [CI 34679702961](https://github.com/tianlin/starling-desktop/actions/runs/34679702961) 已全部通过，含 Linux 六组编码媒体检查；新增故障场景已接入 CI，后续提交的结果另行核对。
 
 ## 历史合成测试
 

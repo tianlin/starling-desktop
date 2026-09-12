@@ -63,6 +63,7 @@ export interface Bootstrap {
     queue: Item[];
     bookmarks: Item[];
     history: Progress[];
+    playbackGeneration: number;
     warning?: AppFailure;
 }
 export interface Playback {
