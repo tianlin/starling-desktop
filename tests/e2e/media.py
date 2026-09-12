@@ -7,6 +7,7 @@ import http.server
 import pathlib
 import re
 import threading
+import urllib.error
 import urllib.parse
 import urllib.request
 
@@ -17,6 +18,13 @@ TYPES = {'mp3': 'audio/mpeg', 'm4a': 'audio/mp4', 'aac': 'audio/aac'}
 
 def run_media_checks(browser):
     requests = []
+    # Load only fixed, checked-in fixtures before accepting HTTP requests.
+    # Request data selects bytes, never a filesystem path.
+    fixtures = {
+        'mp3': (FIXTURES / 'silence.mp3').read_bytes(),
+        'm4a': (FIXTURES / 'silence.m4a').read_bytes(),
+        'aac': (FIXTURES / 'silence.aac').read_bytes(),
+    }
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def log_message(self, *_):
@@ -52,7 +60,7 @@ def run_media_checks(browser):
                   .replace('RESUME_POSITION', '3' if mode == 'range' else '0')).encode()
             elif media:
                 mode, ext = media.groups()
-                data = (FIXTURES / ('silence.' + ext)).read_bytes()
+                data = fixtures[ext]
                 kind = TYPES[ext]
                 requested = self.headers.get('Range', '')
                 if mode == 'range':
@@ -94,6 +102,20 @@ def run_media_checks(browser):
     origin = 'http://127.0.0.1:' + str(server.server_port)
     results = []
     try:
+        for path in (
+            '/media/range/../media.py',
+            '/media/plain/%2e%2e%2fmedia.py',
+            '/media/range/silence.mp3/../../media.py',
+            '/media/plain/silence.wav',
+        ):
+            try:
+                urllib.request.urlopen(origin + path, timeout=5).close()
+            except urllib.error.HTTPError as error:
+                assert error.code == 404, (path, error.code)
+                error.close()
+            else:
+                raise AssertionError('Unexpected media route accepted: ' + path)
+        results.append('media server rejects traversal and unsupported fixture paths')
         for ext in TYPES:
             for mode in ('range', 'plain'):
                 req = urllib.request.Request(origin + '/media/' + mode + '/silence.' + ext, headers={'Range': 'bytes=10-29'})
