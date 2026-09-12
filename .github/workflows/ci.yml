@@ -9,12 +9,12 @@ jobs:
   core:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version: '1.26.8'
           cache: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22.16.0'
           cache: npm
@@ -25,7 +25,7 @@ jobs:
       - run: npm ci --ignore-scripts && npm test
         working-directory: frontend
       - run: node --test scripts/license-files.test.mjs
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7.0.0
         with:
           python-version: '3.12'
       - name: Install isolated browser test dependencies
@@ -45,22 +45,22 @@ jobs:
       - name: Verify real media errors and bounded URL refresh
         run: python tests/e2e/media_failures.py
       - name: Upload synthetic browser evidence
-        if: always()
-        uses: actions/upload-artifact@v4
+        if: always() && hashFiles('docs/test-results/**') != ''
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: synthetic-browser-results
           path: docs/test-results/
-          if-no-files-found: warn
+          if-no-files-found: error
       - run: GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build ./...
   windows-candidate:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version: '1.26.8'
           cache: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7.0.0
         with:
           node-version: '22.16.0'
       - name: Build and run native core tests, then build Wails
@@ -74,7 +74,7 @@ jobs:
           node scripts/dependency-report.mjs build/Starling.exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Upload unsigned development candidate (not a release)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: starling-unsigned-development-candidate
           path: |
@@ -86,7 +86,7 @@ jobs:
   windows-installation:
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
       - name: Verify installation and removal in isolated directories
         shell: powershell
         run: |
