@@ -53,6 +53,14 @@
 
 提交 `66bf853adba343175e0d818a13722f00a3274ee9` 已推送远端 main；[GitHub Actions 34677155739](https://github.com/tianlin/starling-desktop/actions/runs/34677155739) 全部成功，覆盖 Linux go test -race / vet / frontend、Windows 完整绑定构建、二进制扫描和依赖材料归档。后续增量的远端状态以各自提交的运行结果为准。
 
+## 安装/卸载脚本隔离回归
+
+`test-installation.ps1` 在 Windows PowerShell 5.1 和 PowerShell 7 下均有 7 项检查通过：相对目录拒绝、中文路径安装及快捷方式目标、模拟正式/候选进程保护、真实文件锁导致升级失败时旧文件保留且暂存清理、正常升级、目录 junction 拒绝前保留原文件、卸载保留数据与显式删除。数据及快捷方式全部位于唯一临时目录，没有执行真实程序、改动用户安装或开始菜单。安装/卸载之前检查完整路径与重解析点；升级采用暂存后 File.Replace。
+
+这不替代干净 VM、非管理员账号、真实运行中程序与已签名安装包验收。当前二进制内容不因脚本改动而变化。
+
+提交 `e0ab02d52bac00959e6122e71f7be37e30e7dbbd` 的 [CI 34677317958](https://github.com/tianlin/starling-desktop/actions/runs/34677317958) 全部成功，已包含 69 项核心测试、13 项前端测试和 Linux 合成浏览器回归。
+
 ## 历史合成测试
 
 较早的 Linux 环境记录：Go 1.23.2、Node.js 22.16.0、系统 SQLite；45 项核心测试及竞态检查、10 项前端测试、11 项 Chromium 合成浏览器检查通过。这些是历史结果，不代表后续新增代码全部经过相同浏览器或竞态检查。

@@ -71,7 +71,7 @@ powershell -NoProfile -File .\scripts\uninstall.ps1
 powershell -NoProfile -File .\scripts\uninstall.ps1 -RemoveData
 ```
 
-安装位置：`%LOCALAPPDATA%\Programs\Starling`。数据位置：`%APPDATA%\Starling`。脚本不自动结束正在运行的进程。默认卸载保留数据；`-RemoveData` 才会清除。运行中的 WebView 缓存以退出后 / 下次启动时的尽力清理为界，不承诺取证级擦除。
+安装位置：`%LOCALAPPDATA%\Programs\Starling`。数据位置：`%APPDATA%\Starling`。脚本拒绝在 Starling 或候选版运行时安装/卸载，不自动结束进程。升级先暂存新文件，再原子替换程序；文件占用导致失败时保留旧版本。环境目录必须是绝对路径，安装/卸载范围内存在目录链接或重解析点时会停止。默认卸载保留数据；`-RemoveData` 才会清除。运行中的 WebView 缓存以退出后 / 下次启动时的尽力清理为界，不承诺取证级擦除。
 
 ## 运行合成演示，不连接真实账号
 
@@ -127,3 +127,5 @@ docs/                PRD、实现说明、验证证据与未完成项
 ```
 
 公开发布前请先阅读 [SECURITY.md](SECURITY.md)、[隐私说明](PRIVACY.md) 和 [第三方参考与许可](THIRD_PARTY_NOTICES.md)。本仓库未替你创建或推送任何远程 GitHub 项目。
+
+安装脚本回归：`powershell -NoProfile -File .\scripts\test-installation.ps1`。7 项检查仅使用临时目录和合成文件，覆盖安装/升级、文件占用、候选进程保护、链接拒绝与数据保留/删除；不安装或启动真实应用。Windows CI 自动执行此检查。
