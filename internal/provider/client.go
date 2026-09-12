@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-const AdapterVersion = "xyz-comments-2026-09-12.2"
+const AdapterVersion = "xyz-comments-2026-09-12.3"
 const userAgent = "Starling/0.1.0-alpha (unofficial desktop podcast client)"
 
 type Client struct {

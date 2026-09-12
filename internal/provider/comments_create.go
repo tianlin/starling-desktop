@@ -13,7 +13,22 @@ type CommentWriter interface {
 	CreateComment(context.Context, string, string, string) (model.Comment, error)
 }
 
+type CommentReplyWriter interface {
+	ReplyComment(context.Context, string, string, string, string, string) (model.Comment, error)
+}
+
 func (c *Client) CreateComment(ctx context.Context, token, episodeID, text string) (model.Comment, error) {
+	return c.writeComment(ctx, token, episodeID, text, "", "")
+}
+
+func (c *Client) ReplyComment(ctx context.Context, token, episodeID, text, replyToCommentID, primaryCommentID string) (model.Comment, error) {
+	if !security.ValidID(replyToCommentID) || !security.ValidID(primaryCommentID) {
+		return model.Comment{}, model.Err("INVALID_ID", "回复目标或评论串 ID 无效。")
+	}
+	return c.writeComment(ctx, token, episodeID, text, replyToCommentID, primaryCommentID)
+}
+
+func (c *Client) writeComment(ctx context.Context, token, episodeID, text, replyToCommentID, primaryCommentID string) (model.Comment, error) {
 	if !validToken(token) {
 		return model.Comment{}, model.Err("UNAUTHORIZED", "请连接账号后发表评论。")
 	}
@@ -24,6 +39,9 @@ func (c *Client) CreateComment(ctx context.Context, token, episodeID, text strin
 		return model.Comment{}, e
 	}
 	body := map[string]any{"text": text, "owner": map[string]string{"id": episodeID, "type": "EPISODE"}}
+	if replyToCommentID != "" {
+		body["replyToCommentId"] = replyToCommentID
+	}
 	b, _, e := c.request(ctx, "POST", c.api+"/v1/comment/create", body, accessHeader(token), false)
 	if e != nil {
 		switch model.PublicError(e).Code {
@@ -33,7 +51,7 @@ func (c *Client) CreateComment(ctx context.Context, token, episodeID, text strin
 			return model.Comment{}, e
 		}
 	}
-	comment, e := decodeCreatedComment(b, episodeID)
+	comment, e := decodeCreatedCommentTarget(b, episodeID, replyToCommentID, primaryCommentID)
 	if e != nil {
 		return model.Comment{}, commentUncertain()
 	}
@@ -45,6 +63,10 @@ func commentUncertain() error {
 }
 
 func decodeCreatedComment(b []byte, episodeID string) (model.Comment, error) {
+	return decodeCreatedCommentTarget(b, episodeID, "", "")
+}
+
+func decodeCreatedCommentTarget(b []byte, episodeID, replyToCommentID, primaryCommentID string) (model.Comment, error) {
 	var env map[string]json.RawMessage
 	bad := func() (model.Comment, error) {
 		return model.Comment{}, model.Err("BAD_RESPONSE", "发表响应结构不符合已验证契约。")
@@ -55,6 +77,14 @@ func decodeCreatedComment(b []byte, episodeID string) (model.Comment, error) {
 	var item map[string]json.RawMessage
 	if json.Unmarshal(env["data"], &item) != nil || item == nil {
 		return bad()
+	}
+	if replyToCommentID == "" {
+		if raw, ok := item["thread"]; ok && string(raw) != "null" && string(raw) != `""` {
+			return bad()
+		}
+		if raw, ok := item["replyToComment"]; ok && string(raw) != "null" {
+			return bad()
+		}
 	}
 	// The create endpoint documents replyCount, while list-primary documents
 	// threadReplyCount. Normalize into the shared decoder without guessing aliases.
@@ -71,6 +101,9 @@ func decodeCreatedComment(b []byte, episodeID string) (model.Comment, error) {
 	}
 	page, e := decodeCommentPage(append(append([]byte(`{"data":[`), raw...), []byte(`],"totalCount":1}`)...), episodeID, true)
 	if e != nil || len(page.Items) != 1 {
+		return bad()
+	}
+	if replyToCommentID != "" && (page.Items[0].PrimaryCommentID != primaryCommentID || page.Items[0].ReplyTo == nil || page.Items[0].ReplyTo.ID != replyToCommentID) {
 		return bad()
 	}
 	return page.Items[0], nil

@@ -49,5 +49,33 @@ func (s *Service) CommentsOrdered(ctx context.Context, epoch uint64, episodeID, 
 	if err != nil {
 		return model.CommentPage{}, err
 	}
+	// Index only validated relationships from this account's completed reads.
+	// No bodies or author information are retained in this write admission index.
+	err = s.session.Commit(epoch, func(string) error {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.commentReadEpoch != epoch {
+			s.commentReadEpoch = epoch
+			s.commentTargets = map[string]map[string]string{}
+		}
+		if s.commentTargets[episodeID] == nil {
+			s.commentTargets[episodeID] = map[string]string{}
+		}
+		known := s.commentTargets[episodeID]
+		for _, item := range page.Items {
+			if !security.ValidID(item.ID) {
+				continue
+			}
+			if commentID == "" && item.PrimaryCommentID == "" && item.ReplyTo == nil {
+				known[item.ID] = item.ID
+			} else if commentID != "" && item.PrimaryCommentID == commentID && item.ID != commentID {
+				known[item.ID] = commentID
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return model.CommentPage{}, err
+	}
 	return page, nil
 }

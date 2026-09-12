@@ -78,15 +78,17 @@ func (s *Service) dispatch(ctx context.Context, action, payload string) (any, er
 	switch action {
 	case "comments.create":
 		var v struct {
-			Epoch     uint64 `json:"epoch"`
-			EpisodeID string `json:"episodeId"`
-			Text      string `json:"text"`
-			RequestID string `json:"requestId"`
+			Epoch            uint64 `json:"epoch"`
+			EpisodeID        string `json:"episodeId"`
+			Text             string `json:"text"`
+			RequestID        string `json:"requestId"`
+			ReplyToCommentID string `json:"replyToCommentId"`
+			PrimaryCommentID string `json:"primaryCommentId"`
 		}
 		if e := decodePayload(payload, &v); e != nil {
 			return nil, e
 		}
-		return s.CreateComment(ctx, v.Epoch, v.EpisodeID, v.Text, v.RequestID)
+		return s.CreateCommentReply(ctx, v.Epoch, v.EpisodeID, v.Text, v.RequestID, v.ReplyToCommentID, v.PrimaryCommentID)
 	case "comments.list", "comments.thread":
 		var v struct {
 			Epoch     uint64             `json:"epoch"`

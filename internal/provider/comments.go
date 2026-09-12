@@ -64,7 +64,18 @@ func (c *Client) readComments(ctx context.Context, token, episodeID, commentID, 
 	if e != nil {
 		return model.CommentPage{}, e
 	}
-	return decodeCommentPageOrdered(b, episodeID, thread, order)
+	page, e := decodeCommentPageOrdered(b, episodeID, thread, order)
+	if e != nil {
+		return model.CommentPage{}, e
+	}
+	if thread {
+		for _, item := range page.Items {
+			if item.PrimaryCommentID != "" && item.PrimaryCommentID != commentID {
+				return model.CommentPage{}, model.Err("BAD_RESPONSE", "回复不属于当前评论串。")
+			}
+		}
+	}
+	return page, nil
 }
 
 func validCommentCursor(raw json.RawMessage, order model.CommentOrder) bool {
@@ -183,6 +194,8 @@ func decodeCommentPageOrdered(b []byte, episodeID string, thread bool, order mod
 			Text       *string         `json:"text"`
 			CreatedAt  string          `json:"createdAt"`
 			ReplyCount int             `json:"threadReplyCount"`
+			Thread     string          `json:"thread"`
+			ReplyTo    json.RawMessage `json:"replyToComment"`
 		}
 		if json.Unmarshal(raw, &v) != nil || !security.ValidID(v.ID) || seen[v.ID] || v.Owner.ID != episodeID || v.Owner.Type != "EPISODE" || v.Text == nil || v.ReplyCount < 0 {
 			return bad()
@@ -194,8 +207,43 @@ func decodeCommentPageOrdered(b []byte, episodeID string, thread bool, order mod
 		if e != nil {
 			return bad()
 		}
+		if v.Thread != "" && !security.ValidID(v.Thread) {
+			return bad()
+		}
+		var ref *model.CommentReference
+		if len(v.ReplyTo) > 0 && string(v.ReplyTo) != "null" {
+			var target struct {
+				ID    string `json:"id"`
+				Owner *struct {
+					ID   string `json:"id"`
+					Type string `json:"type"`
+				} `json:"owner"`
+				Author struct {
+					Nickname string `json:"nickname"`
+				} `json:"author"`
+				Text   *string `json:"text"`
+				Thread string  `json:"thread"`
+			}
+			if json.Unmarshal(v.ReplyTo, &target) != nil || !security.ValidID(target.ID) || target.Text == nil {
+				return bad()
+			}
+			if target.Owner != nil && (target.Owner.ID != episodeID || target.Owner.Type != "EPISODE") {
+				return bad()
+			}
+			if target.Thread != "" && (!security.ValidID(target.Thread) || v.Thread != "" && target.Thread != v.Thread) {
+				return bad()
+			}
+			// Without an owner the relationship cannot be established safely.
+			if target.Owner != nil {
+				summary := []rune(*target.Text)
+				if len(summary) > 200 {
+					summary = summary[:200]
+				}
+				ref = &model.CommentReference{ID: target.ID, Nickname: target.Author.Nickname, Summary: string(summary)}
+			}
+		}
 		seen[v.ID] = true
-		out.Items = append(out.Items, model.Comment{ID: v.ID, Author: author, Text: *v.Text, CreatedAt: v.CreatedAt, ReplyCount: v.ReplyCount})
+		out.Items = append(out.Items, model.Comment{ID: v.ID, Author: author, Text: *v.Text, CreatedAt: v.CreatedAt, ReplyCount: v.ReplyCount, PrimaryCommentID: v.Thread, ReplyTo: ref})
 	}
 	return out, nil
 }

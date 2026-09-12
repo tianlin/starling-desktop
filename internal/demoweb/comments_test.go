@@ -66,3 +66,54 @@ func TestSyntheticPublicationCanBeReadBack(t *testing.T) {
 		t.Fatal("mixed order cursor accepted")
 	}
 }
+
+func TestSyntheticReplyReadBackStaysInThread(t *testing.T) {
+	s, err := New(t.TempDir(), "127.0.0.1:34115")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	cfg := model.DefaultSettings()
+	cfg.ExperimentalAccount = true
+	s.app.SaveSettings(cfg)
+	ctx := context.Background()
+	if err = s.app.Login(ctx, "00000000000", "+86", "0000", false); err != nil {
+		t.Fatal(err)
+	}
+	epoch := s.app.Session().Epoch
+	eid := sample(0).ID
+	primary := syntheticComment(0).ID
+	s.app.Comments(ctx, epoch, eid, "", "")
+	s.app.Comments(ctx, epoch, eid, primary, "")
+	for _, target := range []string{primary, syntheticComment(3).ID} {
+		out, err := s.app.CreateCommentReply(ctx, epoch, eid, "合成回复读回", "request-"+target, target, primary)
+		if err != nil {
+			t.Fatal(err)
+		}
+		thread, err := s.app.Comments(ctx, epoch, eid, primary, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, c := range thread.Items {
+			if c.ID == out.Comment.ID {
+				found = true
+				if c.PrimaryCommentID != primary || c.ReplyTo.ID != target {
+					t.Fatal(c)
+				}
+			}
+		}
+		if !found {
+			t.Fatal("reply not read back")
+		}
+		roots, err := s.app.CommentsOrdered(ctx, epoch, eid, "", "", model.CommentOrderLatest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range roots.Items {
+			if c.ID == out.Comment.ID {
+				t.Fatal("reply leaked into root list")
+			}
+		}
+	}
+}

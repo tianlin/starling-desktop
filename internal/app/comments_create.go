@@ -16,7 +16,15 @@ var commentRequestID = regexp.MustCompile(`^[A-Za-z0-9_-]{8,128}$`)
 const maxCommentAttempts = 4096
 
 func (s *Service) CreateComment(ctx context.Context, epoch uint64, episodeID, text, requestID string) (model.CommentCreateResult, error) {
+	return s.CreateCommentReply(ctx, epoch, episodeID, text, requestID, "", "")
+}
+
+func (s *Service) CreateCommentReply(ctx context.Context, epoch uint64, episodeID, text, requestID, replyToCommentID, primaryCommentID string) (model.CommentCreateResult, error) {
 	var out model.CommentCreateResult
+	replying := replyToCommentID != "" || primaryCommentID != ""
+	if replying && (!security.ValidID(replyToCommentID) || !security.ValidID(primaryCommentID)) {
+		return out, model.Err("COMMENT_TARGET_INVALID", "回复对象关联不完整，请刷新评论后重新选择。")
+	}
 	if !security.ValidID(episodeID) {
 		return out, model.Err("INVALID_ID", "单集 ID 无效。")
 	}
@@ -33,6 +41,10 @@ func (s *Service) CreateComment(ctx context.Context, epoch uint64, episodeID, te
 	if !ok {
 		return out, model.Err("UNSUPPORTED", "当前连接不支持发表评论。")
 	}
+	replyWriter, supportsReply := s.p.(provider.CommentReplyWriter)
+	if replying && !supportsReply {
+		return out, model.Err("UNSUPPORTED", "当前连接不支持回复评论。")
+	}
 	if ctx.Err() != nil {
 		return out, model.Err("CANCELLED", "请求尚未发送，操作已取消。")
 	}
@@ -46,6 +58,12 @@ func (s *Service) CreateComment(ctx context.Context, epoch uint64, episodeID, te
 	err := s.session.Commit(epoch, func(string) error {
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		if replying {
+			known := s.commentTargets[episodeID]
+			if s.commentReadEpoch != epoch || known[replyToCommentID] != primaryCommentID || known[primaryCommentID] != primaryCommentID {
+				return model.Err("COMMENT_TARGET_INVALID", "无法确认回复对象属于当前账号已读取的单集讨论，请刷新评论后重新选择。")
+			}
+		}
 		if s.commentEpoch != epoch {
 			s.commentEpoch = epoch
 			s.commentAttempts = map[string]struct{}{}
@@ -75,12 +93,21 @@ func (s *Service) CreateComment(ctx context.Context, epoch uint64, episodeID, te
 		s.mu.Unlock()
 	}()
 	_, err = s.session.DoOnceAt(ctx, epoch, func(c context.Context, token string) error {
-		comment, e := p.CreateComment(c, token, episodeID, text)
+		var comment model.Comment
+		var e error
+		if replying {
+			comment, e = replyWriter.ReplyComment(c, token, episodeID, text, replyToCommentID, primaryCommentID)
+		} else {
+			comment, e = p.CreateComment(c, token, episodeID, text)
+		}
 		if e != nil {
 			return e
 		}
 		if !security.ValidID(comment.ID) || comment.Author.ID != snap.Identity.ID {
 			return model.Err("COMMENT_UNCERTAIN", "发表结果未确认，请刷新评论或在官方客户端核对；不会自动重发。")
+		}
+		if (replying && (comment.PrimaryCommentID != primaryCommentID || comment.ReplyTo == nil || comment.ReplyTo.ID != replyToCommentID)) || (!replying && (comment.PrimaryCommentID != "" || comment.ReplyTo != nil)) {
+			return model.Err("COMMENT_UNCERTAIN", "无法确认发表结果的回复关系，请刷新讨论核对；不会自动重发。")
 		}
 		out.Comment = comment
 		return nil

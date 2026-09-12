@@ -44,6 +44,7 @@ func TestLiveCommentsReadOnly(t *testing.T) {
 		}
 		eid = p.Items[0].ID
 	}
+	threadReads := 0
 	for _, order := range []model.CommentOrder{model.CommentOrderHot, model.CommentOrderLatest} {
 		cursor := ""
 		seen := map[string]bool{}
@@ -54,6 +55,28 @@ func TestLiveCommentsReadOnly(t *testing.T) {
 				t.Fatal(e)
 			}
 			t.Logf("primary order=%s page=%d items=%d complete=%v cursor=%v", order, n, len(p.Items), p.Complete, p.Cursor != "")
+			if order == model.CommentOrderHot {
+				for _, item := range p.Items {
+					if item.ReplyCount <= 0 || threadReads >= 2 {
+						continue
+					}
+					threadReads++
+					replies, e := c.CommentThread(ctx, saved.Credentials.Access, eid, item.ID, "")
+					if e != nil {
+						t.Fatal(e)
+					}
+					primaryRelations, replyReferences := 0, 0
+					for _, reply := range replies.Items {
+						if reply.PrimaryCommentID != "" {
+							primaryRelations++
+						}
+						if reply.ReplyTo != nil {
+							replyReferences++
+						}
+					}
+					t.Logf("thread sample=%d expected=%d items=%d complete=%v primaryRelations=%d replyReferences=%d", threadReads, item.ReplyCount, len(replies.Items), replies.Complete, primaryRelations, replyReferences)
+				}
+			}
 			if order == model.CommentOrderLatest {
 				for _, item := range p.Items {
 					date, _ := time.Parse(time.RFC3339Nano, item.CreatedAt)
@@ -86,5 +109,8 @@ func TestLiveCommentsReadOnly(t *testing.T) {
 			seen[p.Cursor] = true
 			cursor = p.Cursor
 		}
+	}
+	if threadReads == 0 {
+		t.Log("no existing replies in sampled HOT pages; live relationship decoder unverified")
 	}
 }

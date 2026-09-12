@@ -18,6 +18,14 @@ type Fake struct {
 	CommentsOrderedFunc func(context.Context, string, string, string, model.CommentOrder) (model.CommentPage, error)
 	CommentThreadFunc   func(context.Context, string, string, string, string) (model.CommentPage, error)
 	CreateCommentFunc   func(context.Context, string, string, string) (model.Comment, error)
+	ReplyCommentFunc    func(context.Context, string, string, string, string, string) (model.Comment, error)
+}
+
+func (f *Fake) ReplyComment(ctx context.Context, token, eid, text, target, primary string) (model.Comment, error) {
+	if f.ReplyCommentFunc != nil {
+		return f.ReplyCommentFunc(ctx, token, eid, text, target, primary)
+	}
+	return model.Comment{}, model.Err("UNSUPPORTED", "合成提供方未配置回复评论。")
 }
 
 func (f *Fake) CreateComment(ctx context.Context, token, eid, text string) (model.Comment, error) {

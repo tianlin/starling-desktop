@@ -24,11 +24,19 @@ func NormalizeCommentOrder(order CommentOrder) (CommentOrder, error) {
 }
 
 type Comment struct {
-	ID         string   `json:"id"`
-	Author     Identity `json:"author"`
-	Text       string   `json:"text"`
-	CreatedAt  string   `json:"createdAt"`
-	ReplyCount int      `json:"replyCount,omitempty"`
+	ID               string            `json:"id"`
+	Author           Identity          `json:"author"`
+	Text             string            `json:"text"`
+	CreatedAt        string            `json:"createdAt"`
+	ReplyCount       int               `json:"replyCount,omitempty"`
+	PrimaryCommentID string            `json:"primaryCommentId,omitempty"`
+	ReplyTo          *CommentReference `json:"replyTo,omitempty"`
+}
+
+type CommentReference struct {
+	ID       string `json:"id"`
+	Nickname string `json:"nickname"`
+	Summary  string `json:"summary"`
 }
 
 type CommentPage struct {
