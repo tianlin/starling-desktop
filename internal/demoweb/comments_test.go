@@ -34,3 +34,28 @@ func TestSyntheticCommentsHaveMultiplePagesAndThread(t *testing.T) {
 		t.Fatal(r, err)
 	}
 }
+
+func TestSyntheticPublicationCanBeReadBack(t *testing.T) {
+	s, err := New(t.TempDir(), "127.0.0.1:34115")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	settings := model.DefaultSettings()
+	settings.ExperimentalAccount = true
+	if err = s.app.SaveSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.app.Login(context.Background(), "00000000000", "+86", "0000", false); err != nil {
+		t.Fatal(err)
+	}
+	epoch := s.app.Session().Epoch
+	out, err := s.app.CreateComment(context.Background(), epoch, sample(0).ID, "合成新增评论", "synthetic-request-1")
+	if err != nil || out.Comment.Text != "合成新增评论" {
+		t.Fatal(out, err)
+	}
+	p, err := s.app.Comments(context.Background(), epoch, sample(0).ID, "", "")
+	if err != nil || len(p.Items) != 3 || p.Items[0].ID != out.Comment.ID {
+		t.Fatal(p, err)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"starling/internal/model"
 	"starling/internal/provider"
 	"starling/internal/testkit"
+	"sync"
 )
 
 func syntheticComment(i int) model.Comment {
@@ -19,10 +20,17 @@ func syntheticComment(i int) model.Comment {
 }
 
 func installCommentFixtures(f *testkit.Fake) {
+	var mu sync.Mutex
+	posted := map[string][]model.Comment{}
+	sequence := 0
 	page2 := provider.EncodeCursor(json.RawMessage(`{"page":2}`))
 	f.CommentsFunc = func(_ context.Context, token, eid, cursor string) (model.CommentPage, error) {
+		mu.Lock()
+		defer mu.Unlock()
 		if cursor == "" {
-			return model.CommentPage{Items: []model.Comment{syntheticComment(0), syntheticComment(1)}, Cursor: page2}, nil
+			items := append([]model.Comment{}, posted[eid]...)
+			items = append(items, syntheticComment(0), syntheticComment(1))
+			return model.CommentPage{Items: items, Cursor: page2}, nil
 		}
 		if cursor != page2 {
 			return model.CommentPage{}, model.Err("PAGINATION", "演示评论游标无效。")
@@ -34,5 +42,19 @@ func installCommentFixtures(f *testkit.Fake) {
 			return model.CommentPage{}, model.Err("NOT_FOUND", "演示回复不存在。")
 		}
 		return model.CommentPage{Items: []model.Comment{syntheticComment(3)}, Complete: true}, nil
+	}
+	f.CreateCommentFunc = func(ctx context.Context, token, eid, text string) (model.Comment, error) {
+		if err := model.ValidateCommentText(text); err != nil {
+			return model.Comment{}, err
+		}
+		if ctx.Err() != nil {
+			return model.Comment{}, model.Err("COMMENT_UNCERTAIN", "合成发表结果未确认。")
+		}
+		mu.Lock()
+		defer mu.Unlock()
+		sequence++
+		comment := model.Comment{ID: fmt.Sprintf("%024x", sequence), Author: model.Identity{ID: "user-a", Nickname: "合成测试账号"}, Text: text, CreatedAt: model.Now()}
+		posted[eid] = append([]model.Comment{comment}, posted[eid]...)
+		return comment, nil
 	}
 }

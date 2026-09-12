@@ -74,6 +74,115 @@ try:
         page.get_by_role('tab', name='评论', exact=True).click()
         expect(cards).to_have_count(3)
         results.append('PASS: replies expand, tabs preserve comments and continuous playback')
+
+        draft = page.get_by_role('textbox', name='评论内容', exact=True)
+        send = page.get_by_role('button', name='发表评论', exact=True)
+        draft.fill(' \n\t ')
+        expect(send).to_be_disabled()
+        draft.fill('合成浏览器发表：保留换行。\n第二行。')
+        expect(send).to_be_enabled()
+        held = []
+        def hold_created(route):
+            if route.request.post_data_json['action'] == 'comments.create':
+                response = route.fetch()
+                assert response.json()['ok']
+                held.append((route, response))
+            else: route.continue_()
+        page.route('**/api', hold_created)
+        send.click()
+        for _ in range(100):
+            if held: break
+            page.wait_for_timeout(20)
+        assert len(held) == 1
+        expect(page.get_by_role('button', name='正在发表…', exact=True)).to_be_disabled()
+        expect(draft).to_have_value('合成浏览器发表：保留换行。\n第二行。')
+        held[0][0].fulfill(response=held[0][1])
+        page.unroute('**/api', hold_created)
+        expect(page.get_by_role('status').filter(has_text='评论已发表')).to_be_visible()
+        expect(draft).to_have_value('')
+        expect(cards).to_have_count(4)
+        assert len([r for r in reads if r['action'] == 'comments.create']) == 1
+        results.append('PASS: whitespace blocked, one in-flight write, confirmed result clears draft')
+
+        draft.fill('跨页面草稿')
+        page.get_by_role('tab', name='节目说明', exact=True).click()
+        page.get_by_role('tab', name='评论', exact=True).click()
+        expect(draft).to_have_value('跨页面草稿')
+        page.locator('[data-route="favorites"]').click()
+        page.locator('.episode-title').nth(1).click()
+        page.get_by_role('tab', name='评论', exact=True).click()
+        expect(draft).to_have_value('')
+        page.locator('[data-route="favorites"]').click()
+        page.locator('.episode-title').first.click()
+        page.get_by_role('tab', name='评论', exact=True).click()
+        expect(draft).to_have_value('跨页面草稿')
+        results.append('PASS: drafts persist across tabs/routes and stay isolated by episode')
+
+        def lost_created_response(route):
+            if route.request.post_data_json['action'] == 'comments.create':
+                response = route.fetch()
+                assert response.json()['ok']
+                route.fulfill(json={'ok':False,'error':{'code':'COMMENT_UNCERTAIN','message':'合成发表响应丢失'}})
+            else: route.continue_()
+        page.route('**/api', lost_created_response)
+        draft.fill('合成已发表但响应丢失')
+        send.click()
+        expect(page.locator('.comment-send-error')).to_contain_text('合成发表响应丢失')
+        expect(draft).to_have_value('合成已发表但响应丢失')
+        expect(send).to_be_disabled()
+        page.unroute('**/api', lost_created_response)
+        page.get_by_role('button', name='刷新评论', exact=True).click()
+        expect(cards.filter(has_text='合成已发表但响应丢失')).to_have_count(1)
+        sent_count = len([r for r in reads if r['action'] == 'comments.create'])
+        page.get_by_role('button', name='已确认发表，清除草稿', exact=True).click()
+        expect(draft).to_have_value('')
+        assert len([r for r in reads if r['action'] == 'comments.create']) == sent_count
+        results.append('PASS: lost success response stays uncertain; refresh/acknowledgment never republishes')
+
+        def uncertain_without_send(route):
+            if route.request.post_data_json['action'] == 'comments.create':
+                route.fulfill(json={'ok':False,'error':{'code':'COMMENT_UNCERTAIN','message':'合成网络中断'}})
+            else: route.continue_()
+        page.route('**/api', uncertain_without_send)
+        draft.fill('合成明确重试')
+        send.click()
+        expect(page.locator('.comment-send-error')).to_contain_text('合成网络中断')
+        expect(send).to_be_disabled()
+        page.unroute('**/api', uncertain_without_send)
+        page.get_by_role('button', name='刷新评论', exact=True).click()
+        expect(page.get_by_role('button', name='刷新评论', exact=True)).to_be_enabled()
+        expect(cards.filter(has_text='合成明确重试')).to_have_count(0)
+        page.get_by_role('button', name='确认未发表，重新发送', exact=True).click()
+        expect(draft).to_have_value('')
+        expect(cards.filter(has_text='合成明确重试')).to_have_count(1)
+        writes = [r['payload'] for r in reads if r['action'] == 'comments.create']
+        assert len(writes) == 4 and len(set(w['requestId'] for w in writes)) == 4
+        assert page.locator('#audio').evaluate('(a)=>a===window.__commentAudio && !a.paused')
+        results.append('PASS: uncertain failure needs explicit manual retry with new request ID, playback unaffected')
+
+        delayed_read = []
+        def hold_refresh(route):
+            if route.request.post_data_json['action'] == 'comments.list':
+                response = route.fetch()
+                delayed_read.append((route, response))
+            else: route.continue_()
+        page.route('**/api', hold_refresh)
+        page.get_by_role('button', name='刷新评论', exact=True).click()
+        for _ in range(100):
+            if delayed_read: break
+            page.wait_for_timeout(20)
+        assert delayed_read
+        draft.fill('刷新时继续编辑的草稿')
+        draft.focus()
+        draft.evaluate('(e)=>e.setSelectionRange(2,5)')
+        delayed_read[0][0].fulfill(response=delayed_read[0][1])
+        page.unroute('**/api', hold_refresh)
+        expect(page.get_by_role('button', name='刷新评论', exact=True)).to_be_enabled()
+        expect(draft).to_be_focused()
+        expect(draft).to_have_value('刷新时继续编辑的草稿')
+        assert draft.evaluate('(e)=>[e.selectionStart,e.selectionEnd]') == [2,5]
+        results.append('PASS: delayed comment refresh preserves textarea focus, caret and draft')
+        draft.fill('退出前的合成草稿')
         page.screenshot(path=str(OUT/'comments.png'))
         page.set_viewport_size({'width':900,'height':700})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

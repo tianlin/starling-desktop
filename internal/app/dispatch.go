@@ -57,7 +57,7 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 			safeAction = "unknown"
 		}
 		switch action {
-		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread":
+		case "bootstrap", "settings.save", "account.sendCode", "account.login", "account.restore", "account.logout", "library", "detail", "openLink", "playback.resolve", "playback.cancel", "progress.save", "queue", "bookmarks", "cache.clear", "data.reset", "diagnostics", "comments.list", "comments.thread", "comments.create":
 		default:
 			safeAction = "unknown"
 		}
@@ -76,6 +76,17 @@ func (s *Service) Dispatch(ctx context.Context, action, payload string) string {
 }
 func (s *Service) dispatch(ctx context.Context, action, payload string) (any, error) {
 	switch action {
+	case "comments.create":
+		var v struct {
+			Epoch     uint64 `json:"epoch"`
+			EpisodeID string `json:"episodeId"`
+			Text      string `json:"text"`
+			RequestID string `json:"requestId"`
+		}
+		if e := decodePayload(payload, &v); e != nil {
+			return nil, e
+		}
+		return s.CreateComment(ctx, v.Epoch, v.EpisodeID, v.Text, v.RequestID)
 	case "comments.list", "comments.thread":
 		var v struct {
 			Epoch     uint64 `json:"epoch"`

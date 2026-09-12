@@ -17,21 +17,24 @@ import (
 const Version = "0.1.0-alpha.1"
 
 type Service struct {
-	p              provider.Provider
-	store          *store.Store
-	session        *session.Manager
-	mu             sync.Mutex
-	settings       model.Settings
-	stages         map[string]*libraryStage
-	revision       uint64
-	smsUntil       time.Time
-	playID         string
-	playCancel     context.CancelFunc
-	playEpoch      uint64
-	playGeneration uint64
-	playOrdered    bool
-	log            []diagnosticEvent
-	startupError   error
+	p               provider.Provider
+	store           *store.Store
+	session         *session.Manager
+	mu              sync.Mutex
+	settings        model.Settings
+	stages          map[string]*libraryStage
+	revision        uint64
+	smsUntil        time.Time
+	playID          string
+	playCancel      context.CancelFunc
+	playEpoch       uint64
+	playGeneration  uint64
+	playOrdered     bool
+	log             []diagnosticEvent
+	startupError    error
+	commentEpoch    uint64
+	commentAttempts map[string]struct{}
+	commentBusy     bool
 }
 type Bootstrap struct {
 	Version            string            `json:"version"`
@@ -163,6 +166,9 @@ func (s *Service) Restore(ctx context.Context) error {
 	return s.session.Restore(ctx)
 }
 func (s *Service) clearTransientLocked() {
+	s.commentAttempts = nil
+	s.commentEpoch = 0
+	s.commentBusy = false
 	for _, v := range s.stages {
 		if v.cancel != nil {
 			v.cancel()

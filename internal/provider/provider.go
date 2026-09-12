@@ -1,4 +1,4 @@
-// Package provider implements an experimental, read-only Xiaoyuzhou adapter.
+// Package provider implements experimental Xiaoyuzhou reads and explicit comment publication.
 package provider
 
 import (

@@ -17,6 +17,7 @@ export interface CommentPage {
     cursor: string;
     complete: boolean;
 }
+export interface CommentCreated { comment: Comment }
 export interface Item {
     kind: 'episode' | 'podcast';
     id: string;

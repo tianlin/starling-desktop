@@ -171,7 +171,7 @@ export class Application {
         const s = this.boot.session;
         const nick = s.identity?.nickname ?? '访客模式';
         document.querySelector('#account-name').textContent = nick;
-        document.querySelector('#account-caption').textContent = s.state === 'connected' ? '实验接入 · 云端只读' : s.state === 'needs_login' ? '会话失效 · 请重新连接' : '连接你的个人播客库';
+        document.querySelector('#account-caption').textContent = s.state === 'connected' ? '实验接入 · 已连接' : s.state === 'needs_login' ? '会话失效 · 请重新连接' : '连接你的个人播客库';
         document.querySelector('.avatar').textContent = nick.slice(0, 1);
         document.querySelector('#top-account').textContent = s.identity ? '账号与连接' : '连接账号';
         this.drawPlayer();
@@ -526,12 +526,21 @@ export class Application {
         content.id = 'episode-tab-panel';
         let selected = 'notes';
         const draw = () => {
+            const focused = document.activeElement;
+            const caret = focused instanceof HTMLTextAreaElement && content.contains(focused) ? { start: focused.selectionStart, end: focused.selectionEnd } : undefined;
             notesTab.setAttribute('aria-selected', String(selected === 'notes'));
             commentsTab.setAttribute('aria-selected', String(selected === 'comments'));
             notesTab.tabIndex = selected === 'notes' ? 0 : -1;
             commentsTab.tabIndex = selected === 'comments' ? 0 : -1;
             content.setAttribute('aria-labelledby', selected === 'notes' ? notesTab.id : commentsTab.id);
             content.replaceChildren(selected === 'notes' ? notes : renderComments(this.comments, () => showAccount(this)));
+            if (caret) {
+                const draft = content.querySelector('textarea');
+                if (draft) {
+                    draft.focus();
+                    draft.setSelectionRange(caret.start, caret.end);
+                }
+            }
         };
         const select = (tab) => { selected = tab; draw(); if (tab === 'comments' && !this.comments.state.loaded)
             void this.comments.load(); };

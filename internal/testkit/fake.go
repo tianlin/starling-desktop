@@ -16,6 +16,14 @@ type Fake struct {
 	DetailFunc        func(context.Context, string, string, string) (model.Item, error)
 	CommentsFunc      func(context.Context, string, string, string) (model.CommentPage, error)
 	CommentThreadFunc func(context.Context, string, string, string, string) (model.CommentPage, error)
+	CreateCommentFunc func(context.Context, string, string, string) (model.Comment, error)
+}
+
+func (f *Fake) CreateComment(ctx context.Context, token, eid, text string) (model.Comment, error) {
+	if f.CreateCommentFunc != nil {
+		return f.CreateCommentFunc(ctx, token, eid, text)
+	}
+	return model.Comment{}, model.Err("UNSUPPORTED", "合成提供方未配置发表评论。")
 }
 
 func (f *Fake) Comments(ctx context.Context, token, eid, cursor string) (model.CommentPage, error) {

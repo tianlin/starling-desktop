@@ -2,6 +2,24 @@
 
 验证记录更新：2026-09-12。源码开发版，不是签名安装包或完成真实账号验收的正式版本。
 
+## 评论发表增量与最终候选（2026-09-12）
+
+适配器 `xyz-comments-2026-09-12.2`。在阅读提交 `c26a704` 上增加一级纯文字发表、无续期重放的写会话路径、当前 epoch 的请求 ID 防重复及串行准入、结果未确认提示、草稿隔离和手动核对流程。发表正文不进入诊断或持久化存储。独立本地审查未发现需修正的问题；不是 CodeRabbit 报告。
+
+| 检查 | 本次结果 |
+| --- | --- |
+| 根模块 `go test -json -count=1 ./...` | 116 个测试/子测试通过，5 个显式联网项默认跳过；随后 `go vet ./...` 通过 |
+| 前端 `npm test` | 严格 TypeScript 编译及 46 项 Node 测试通过，其中评论 16 项 |
+| desktop `go test ./...` / `go vet ./...` | 通过；无宿主专用测试文件 |
+| 原有界面 `tests/e2e/run.py` | Windows Headless Chrome 16 组通过，保留 CSP；无真实账号 |
+| 评论 `tests/e2e/comments.py` | 11 组通过，覆盖读分页/线程、实际合成发表、跨页草稿、响应丢失但已发表后的刷新核对、明确手动重试、刷新不丢焦点/选区、持续播放、窄窗口与退出清理 |
+| 编码音频及媒体故障 | `media.py` 6 组、`media_failures.py` 4 组通过 |
+| Windows 候选构建 | `build-windows.ps1 -Candidate -CandidateName Starling-candidate-comments -SkipTests` 成功；上述测试已单独执行，构建仍进行双模块依赖校验、前端编译及 Wails production 编译，跳过绑定生成，未启动程序 |
+
+候选输出 `build/Starling-candidate-comments.exe`，11,368,448 字节，SHA-256：`097f932da84d33e91d21077a01e3e8dc5a0e257bcc630edf4f0b9c55ffca3976`。对应哈希清单 `build/SHA256SUMS-candidate-comments.txt`。二进制及合成截图/测试输出均保持忽略，不加入源码提交。
+
+真实阅读已取得下节证据；**真实发表评论没有执行，仍待用户在界面选择单集、填写正文并主动点击后验收**。缺乏可靠契约的回复继续分页明确保持部分状态。没有复制官方设备标识，没有启动、关闭或替换用户的桌面程序，未推送远端，本次远端 CI 未核验。以下历史构建/扫描记录只对应各自历史候选，不能视作本次候选的漏洞扫描或 WebView2 实机验收。
+
 ## 评论阅读增量（2026-09-12）
 
 根模块与 desktop 模块 `go test ./...` / `go vet ./...` 通过；前端 35 项 Node 测试通过。新增 `tests/e2e/comments.py` 在 Windows Headless Chrome 通过 6 组场景：访客/懒加载、纯文本、分页失败保留与去重、回复与持续播放、900×700 布局、退出清理与无未捕获异常。截图位于忽略的 `docs/test-results/comments*.png`，不是 Wails WebView2 实机证据。

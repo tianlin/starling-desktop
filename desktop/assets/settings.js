@@ -253,7 +253,7 @@ export function showSettings(app) {
         app.boot.settings.experimentalAccount = false;
         void app.saveSettings().catch(e => app.notice(e));
     });
-    section('实验性账号接入', '默认关闭。启用前阅读账号风控与非官方接口风险。', enabled);
+    section('实验性账号接入', '默认关闭。启用前阅读账号风控与非官方接口风险。连接后可查看评论；点击“发表评论”会以当前账号发送公开评论。', enabled);
     section('恢复已保存会话', '只读取本应用自身的受保护凭据，不读取其他应用或浏览器的登录状态。', button('尝试恢复', () => { void call('account.restore').then(() => app.reload()).then(() => app.navigate('settings')).catch(e => app.notice(e)); }));
     const close = el('select');
     close.setAttribute('aria-label', '关闭窗口行为');
