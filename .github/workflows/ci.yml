@@ -55,15 +55,6 @@ jobs:
       - name: Build and run native core tests, then build Wails
         shell: powershell
         run: .\scripts\build-windows.ps1
-      - name: Verify installation and removal in isolated directories
-        shell: powershell
-        run: |
-          try { .\scripts\test-installation.ps1 }
-          catch {
-            $detail = ($_.Exception.Message + ' ' + $_.ScriptStackTrace).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
-            Write-Output "::error title=Isolated installation test::$detail"
-            exit 1
-          }
       - name: Scan the actual executable and collect dependency notices
         shell: powershell
         run: |
@@ -81,3 +72,16 @@ jobs:
             desktop/go.sum
             build/compliance/
           if-no-files-found: error
+  windows-installation:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify installation and removal in isolated directories
+        shell: powershell
+        run: |
+          try { .\scripts\test-installation.ps1 }
+          catch {
+            $detail = ($_.Exception.Message + ' ' + $_.ScriptStackTrace).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Isolated installation test::$detail"
+            exit 1
+          }

@@ -82,6 +82,19 @@ try {
     Assert-Test (-not (Test-Path -LiteralPath $Data)) 'Explicit data removal failed.'
     $Checks++
     Write-Host "PASS: $Checks isolated installation checks. No real installation or application process was touched."
+} catch {
+    $Original = $_
+    # Diagnose Windows-host differences without saving or launching a shortcut.
+    $ProbeResults = @()
+    foreach ($ProbePath in @($Binary, (Join-Path $env:LOCALAPPDATA 'Programs\Starling\Starling.exe'), (Join-Path $env:SystemRoot 'System32\where.exe'))) {
+        try {
+            $ProbeShell = New-Object -ComObject WScript.Shell
+            $ProbeLink = $ProbeShell.CreateShortcut((Join-Path $TestRoot 'probe.lnk'))
+            $ProbeLink.TargetPath = $ProbePath
+            $ProbeResults += 'accepted'
+        } catch { $ProbeResults += $_.Exception.Message }
+    }
+    throw ($Original.Exception.Message + ' at ' + $Original.ScriptStackTrace + '; target probes [ASCII fixture, Unicode fixture, system binary]: ' + ($ProbeResults -join ' | '))
 } finally {
     $env:LOCALAPPDATA = $OldLocal
     $env:APPDATA = $OldRoaming
