@@ -57,7 +57,13 @@ jobs:
         run: .\scripts\build-windows.ps1
       - name: Verify installation and removal in isolated directories
         shell: powershell
-        run: .\scripts\test-installation.ps1
+        run: |
+          try { .\scripts\test-installation.ps1 }
+          catch {
+            $detail = ($_.Exception.Message + ' ' + $_.ScriptStackTrace).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+            Write-Output "::error title=Isolated installation test::$detail"
+            exit 1
+          }
       - name: Scan the actual executable and collect dependency notices
         shell: powershell
         run: |
