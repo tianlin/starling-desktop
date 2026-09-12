@@ -223,8 +223,9 @@ func decodeCommentPageOrdered(b []byte, episodeID string, thread bool, order mod
 				} `json:"author"`
 				Text   *string `json:"text"`
 				Thread string  `json:"thread"`
+				Status string  `json:"status"`
 			}
-			if json.Unmarshal(v.ReplyTo, &target) != nil || !security.ValidID(target.ID) || target.Text == nil {
+			if json.Unmarshal(v.ReplyTo, &target) != nil || !security.ValidID(target.ID) || target.Text == nil && target.Status != "REMOVED" {
 				return bad()
 			}
 			if target.Owner != nil && (target.Owner.ID != episodeID || target.Owner.Type != "EPISODE") {
@@ -235,7 +236,13 @@ func decodeCommentPageOrdered(b []byte, episodeID string, thread bool, order mod
 			}
 			// Without an owner the relationship cannot be established safely.
 			if target.Owner != nil {
-				summary := []rune(*target.Text)
+				// Removed references retain their identity and ownership but omit text.
+				// Keep the readable reply without exposing stale removed content.
+				text := "原评论已删除"
+				if target.Status != "REMOVED" {
+					text = *target.Text
+				}
+				summary := []rune(text)
 				if len(summary) > 200 {
 					summary = summary[:200]
 				}
